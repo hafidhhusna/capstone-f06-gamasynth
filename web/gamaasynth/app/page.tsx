@@ -1,3 +1,5 @@
+// parameter fm, fc, I, attack, decay
+
 import Image from "next/image";
 
 export default function Home() {
