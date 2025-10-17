@@ -22,7 +22,6 @@ export default function WaveformViewer({ file, url, label }: Props) {
       progressColor: "#2563eb",
       cursorColor: "#1e3a8a",
       height: 80,
-      responsive: true,
     });
 
     if (file) {
