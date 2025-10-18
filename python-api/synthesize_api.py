@@ -1,4 +1,5 @@
 from fastapi import FastAPI, UploadFile, File, Form
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.responses import FileResponse
@@ -6,7 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 import numpy as np
 import soundfile as sf
 from scipy import signal
-import os, tempfile, base64
+import os
+import tempfile
 
 app = FastAPI()
 
@@ -31,9 +33,11 @@ def find_peaks_fft(y, sr, n_peaks=6, min_freq=20):
     S = np.abs(np.fft.rfft(y * np.hanning(N)))
     freqs = np.fft.rfftfreq(N, 1/sr)
     mask = freqs > min_freq
-    freqs, S = freqs[mask], S[mask]
+    freqs = freqs[mask]
+    S = S[mask]
     peaks_idx = np.argsort(S)[-n_peaks:][::-1]
-    peak_freqs, peak_amps = freqs[peaks_idx], S[peaks_idx]
+    peak_freqs = freqs[peaks_idx]
+    peak_amps = S[peaks_idx]
     return peak_freqs, peak_amps, freqs, S
 
 def estimate_I_simple(y, sr, f_c, f_m):
@@ -42,9 +46,10 @@ def estimate_I_simple(y, sr, f_c, f_m):
     freqs = np.fft.rfftfreq(N, 1/sr)
     idx_c = np.argmin(np.abs(freqs - f_c))
     idx_sb = np.argmin(np.abs(freqs - (f_c + f_m)))
-    amp_c, amp_sb = S[idx_c], S[idx_sb]
-    ratio = amp_sb / amp_c if amp_c > 0 else 0.0
-    I_est = np.clip(0.5 + 10 * ratio, 0.2, 8.0)
+    amp_c = S[idx_c]
+    amp_sb = S[idx_sb]
+    ratio = amp_sb/amp_c if amp_c>0 else 0.0
+    I_est = np.clip(0.5 + 10*ratio, 0.2, 8.0)
     return I_est, ratio
 
 def synth_improved(f_c, f_m, I0, duration=3.0, sr=44100,
@@ -88,7 +93,7 @@ def synth_improved(f_c, f_m, I0, duration=3.0, sr=44100,
 
     return y, sr
 
-# --- Endpoint ---
+# --- API endpoint ---
 @app.post("/synthesize/")
 async def synthesize(file: UploadFile = File(...), duration: float = Form(3.0)):
     # Simpan file sementara
@@ -104,29 +109,49 @@ async def synthesize(file: UploadFile = File(...), duration: float = Form(3.0)):
     peak_freqs, peak_amps, _, _ = find_peaks_fft(y_ref_seg, sr, n_peaks=20)
     f_c = peak_freqs[np.argmax(peak_amps)]
     candidates = [f for f in np.sort(peak_freqs) if f > f_c + 20]
-    f_m = candidates[0] - f_c if len(candidates) > 0 else f_c * 0.5
+    f_m = candidates[0] - f_c if len(candidates) > 0 else f_c*0.5
+
     I_est, _ = estimate_I_simple(y_ref_seg, sr, f_c, f_m)
 
-    attack_rate, decay_rate = 200.0, 3.0
-    y_new, sr_out = synth_improved(f_c, f_m, I_est, duration=duration, sr=sr,
-                                   attack_rate=attack_rate, decay_rate=decay_rate)
+    y_new, sr_out = synth_improved(f_c, f_m, I_est, duration=duration, sr=sr)
 
     out_path = tmp_path.replace(".wav", "_synth.wav")
     sf.write(out_path, y_new.astype(np.float32), sr_out)
 
-    # Encode audio ke base64
-    with open(out_path, "rb") as f:
-        audio_bytes = f.read()
-    audio_base64 = base64.b64encode(audio_bytes).decode("utf-8")
+    return FileResponse(out_path, media_type="audio/wav", filename="synthesized.wav")
 
+@app.post("/analyze/")
+async def analyze_parameters(file: UploadFile = File(...)):
+    # Simpan file sementara
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+        contents = await file.read()
+        tmp.write(contents)
+        tmp_path = tmp.name
+
+    # Load audio referensi
+    y_ref, sr = read_mono(tmp_path)
+    seg_len = min(len(y_ref), sr * 3)
+    y_ref_seg = y_ref[:seg_len]
+
+    # Estimasi parameter
+    peak_freqs, peak_amps, _, _ = find_peaks_fft(y_ref_seg, sr, n_peaks=20)
+    f_c = peak_freqs[np.argmax(peak_amps)]
+    candidates = [f for f in np.sort(peak_freqs) if f > f_c + 20]
+    f_m = candidates[0] - f_c if len(candidates) > 0 else f_c * 0.5
+    I_est, _ = estimate_I_simple(y_ref_seg, sr, f_c, f_m)
+
+    # Parameter default sintesis (bisa juga dibuat Form jika mau dikustom)
+    attack_rate = 200.0
+    decay_rate = 3.0
+
+    # Hapus file sementara
     os.remove(tmp_path)
-    os.remove(out_path)
 
-    return JSONResponse({
-        "f_c": float(f_c),
-        "f_m": float(f_m),
-        "I_est": float(I_est),
+    # Kembalikan hasil dalam JSON
+    return {
+        "carrier_frequency_fc": round(float(f_c), 3),
+        "modulator_frequency_fm": round(float(f_m), 3),
+        "modulation_index_I": round(float(I_est), 3),
         "attack_rate": attack_rate,
         "decay_rate": decay_rate,
-        "audio_base64": audio_base64
-    })
+    }
