@@ -12,6 +12,8 @@ import EvaluationCard from "@/components/EvaluationCard";
 
 export default function Dashboard() {
   const { toast } = useToast();
+
+  // --- States utama ---
   const [inputFile, setInputFile] = useState<File | null>(null);
   const [synthAudioUrl, setSynthAudioUrl] = useState<string | null>(null);
   const [similarity, setSimilarity] = useState<number | null>(null);
@@ -24,6 +26,7 @@ export default function Dashboard() {
     decay: 0.5,
   });
 
+  // --- Handler Upload ---
   const handleUpload = (file: File) => {
     setInputFile(file);
     toast({
@@ -32,24 +35,26 @@ export default function Dashboard() {
     });
   };
 
+  // --- Handler Sintesis ---
   const handleSynthesize = async () => {
     if (!inputFile) {
-      toast({
+      return toast({
         title: "Tidak ada file!",
         description: "Silakan unggah suara gamelan terlebih dahulu.",
         variant: "destructive",
       });
-      return;
     }
 
+    const formData = new FormData();
+    formData.append("file", inputFile);
+    Object.entries(params).forEach(([key, value]) =>
+      formData.append(key, String(value))
+    );
+
+    toast({ title: "Sedang melakukan sintesis...", description: "Harap tunggu beberapa saat." });
+
     try {
-      const formData = new FormData();
-      formData.append("file", inputFile);
-      Object.entries(params).forEach(([k, v]) => formData.append(k, String(v)));
-
-      toast({ title: "Sedang melakukan sintesis...", description: "Harap tunggu beberapa saat." });
-
-      const res = await fetch("http://localhost:8000/synthesize", {
+      const res = await fetch("http://localhost:8080/synthesize/", {
         method: "POST",
         body: formData,
       });
@@ -57,42 +62,38 @@ export default function Dashboard() {
       if (!res.ok) throw new Error("Gagal melakukan sintesis");
 
       const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      setSynthAudioUrl(url);
+      setSynthAudioUrl(URL.createObjectURL(blob));
 
       toast({
         title: "Sintesis berhasil!",
         description: "Hasil suara sintetis siap untuk diputar.",
       });
-    } catch (e) {
+    } catch (err: any) {
       toast({
         title: "Gagal melakukan sintesis",
-        description: String(e),
+        description: err.message || String(err),
         variant: "destructive",
       });
     }
   };
 
+  // --- Handler Evaluasi ---
   const handleEvaluate = async () => {
     if (!inputFile || !synthAudioUrl) {
-      toast({
+      return toast({
         title: "Tidak dapat mengevaluasi",
         description: "Pastikan sudah ada input dan hasil sintesis.",
         variant: "destructive",
       });
-      return;
     }
 
-    try {
-      toast({
-        title: "Evaluasi dimulai...",
-        description: "Menganalisis kemiripan suara.",
-      });
+    toast({ title: "Evaluasi dimulai...", description: "Menganalisis kemiripan suara." });
 
+    try {
       const formData = new FormData();
       formData.append("input", inputFile);
 
-      const res = await fetch("http://localhost:8000/evaluate", {
+      const res = await fetch("http://localhost:8080/evaluate", {
         method: "POST",
         body: formData,
       });
@@ -104,15 +105,16 @@ export default function Dashboard() {
         title: "Evaluasi selesai!",
         description: "Nilai kemiripan berhasil dihitung.",
       });
-    } catch (e) {
+    } catch (err: any) {
       toast({
         title: "Gagal evaluasi",
-        description: String(e),
+        description: err.message || String(err),
         variant: "destructive",
       });
     }
   };
 
+  // --- Handler Simpan Parameter ---
   const handleSaveParams = () => {
     localStorage.setItem("fm_params", JSON.stringify(params));
     toast({
@@ -123,22 +125,23 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-100 text-gray-800 p-10 space-y-10">
-      <header>
+      {/* Header */}
+      <header className="space-y-2">
         <h1 className="text-4xl font-semibold tracking-tight text-gray-900">
           Capstone F-06 Gamasynth Dashboard
         </h1>
-        <p className="text-gray-500 mt-2">
+        <p className="text-gray-500">
           Eksperimen sintesis suara gamelan menggunakan parameter FM.
         </p>
       </header>
 
-      {/* Input dan hasil sintesis */}
+      {/* Grid Input & Hasil Sintesis */}
       <div className="grid md:grid-cols-2 gap-10">
         <Card className="bg-white border border-gray-200 shadow-md rounded-2xl hover:shadow-lg transition-all duration-300">
           <CardHeader>
-            <CardTitle className="text-gray-900">Input Suara Gamelan</CardTitle>
+            <CardTitle>Input Suara Gamelan</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
             <AudioUploader onUpload={handleUpload} />
             <WaveformViewer file={inputFile} label="Gelombang Asli" />
           </CardContent>
@@ -146,34 +149,34 @@ export default function Dashboard() {
 
         <Card className="bg-white border border-gray-200 shadow-md rounded-2xl hover:shadow-lg transition-all duration-300">
           <CardHeader>
-            <CardTitle className="text-gray-900">Hasil Sintesis</CardTitle>
+            <CardTitle>Hasil Sintesis</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
             {synthAudioUrl ? (
               <WaveformViewer url={synthAudioUrl} label="Gelombang Sintesis" />
             ) : (
-              <p className="text-sm text-gray-500 italic">
-                Belum ada hasil sintesis.
-              </p>
+              <p className="text-sm text-gray-500 italic">Belum ada hasil sintesis.</p>
             )}
           </CardContent>
         </Card>
       </div>
 
-      {/* Kontrol parameter */}
+      {/* Kontrol FM */}
       <Card className="bg-white border border-gray-200 shadow-md rounded-2xl hover:shadow-lg transition-all duration-300">
         <CardHeader>
-          <CardTitle className="text-gray-900">Kontrol FM Synthesis</CardTitle>
+          <CardTitle>Kontrol FM Synthesis</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
           <FmControls params={params} setParams={setParams} />
-          <div className="flex flex-wrap gap-3 mt-6">
+
+          <div className="flex flex-wrap gap-3 mt-4">
             <Button
               className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-6 py-2 rounded-lg shadow-sm"
               onClick={handleSynthesize}
             >
               Synthesize
             </Button>
+
             <Button
               variant="outline"
               className="border-gray-300 text-gray-700 hover:bg-gray-100"
@@ -181,6 +184,7 @@ export default function Dashboard() {
             >
               Evaluate
             </Button>
+
             <Button
               variant="ghost"
               className="text-blue-700 hover:underline"
@@ -192,6 +196,7 @@ export default function Dashboard() {
         </CardContent>
       </Card>
 
+      {/* Evaluation Card */}
       {similarity !== null && <EvaluationCard score={similarity} />}
     </div>
   );
