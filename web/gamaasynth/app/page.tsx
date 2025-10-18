@@ -125,7 +125,7 @@ export default function Dashboard() {
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-100 text-gray-800 p-10 space-y-10">
       <header>
         <h1 className="text-4xl font-semibold tracking-tight text-gray-900">
-          🎶 Gamelan Synth Dashboard
+          Capstone F-06 Gamasynth Dashboard
         </h1>
         <p className="text-gray-500 mt-2">
           Eksperimen sintesis suara gamelan menggunakan parameter FM.
