@@ -1,113 +1,203 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import { useState } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
+
+import AudioUploader from "@/components/AudioUploader";
+import WaveformViewer from "@/components/WaveFormViewer";
+import FmControls from "@/components/FmControls";
+import EvaluationCard from "@/components/EvaluationCard";
+
+export default function Dashboard() {
+  const { toast } = useToast();
+
+  // --- States utama ---
+  const [inputFile, setInputFile] = useState<File | null>(null);
+  const [synthAudioUrl, setSynthAudioUrl] = useState<string | null>(null);
+  const [similarity, setSimilarity] = useState<number | null>(null);
+
+  const [params, setParams] = useState({
+    carrierFreq: 220,
+    modFreq: 440,
+    modIndex: 2,
+    attack: 0.1,
+    decay: 0.5,
+  });
+
+  // --- Handler Upload ---
+  const handleUpload = (file: File) => {
+    setInputFile(file);
+    toast({
+      title: "File berhasil diunggah",
+      description: `${file.name} siap untuk disintesis.`,
+    });
+  };
+
+  // --- Handler Sintesis ---
+  const handleSynthesize = async () => {
+    if (!inputFile) {
+      return toast({
+        title: "Tidak ada file!",
+        description: "Silakan unggah suara gamelan terlebih dahulu.",
+        variant: "destructive",
+      });
+    }
+
+    const formData = new FormData();
+    formData.append("file", inputFile);
+    Object.entries(params).forEach(([key, value]) =>
+      formData.append(key, String(value))
+    );
+
+    toast({ title: "Sedang melakukan sintesis...", description: "Harap tunggu beberapa saat." });
+
+    try {
+      const res = await fetch("http://localhost:8080/synthesize/", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) throw new Error("Gagal melakukan sintesis");
+
+      const blob = await res.blob();
+      setSynthAudioUrl(URL.createObjectURL(blob));
+
+      toast({
+        title: "Sintesis berhasil!",
+        description: "Hasil suara sintetis siap untuk diputar.",
+      });
+    } catch (err: any) {
+      toast({
+        title: "Gagal melakukan sintesis",
+        description: err.message || String(err),
+        variant: "destructive",
+      });
+    }
+  };
+
+  // --- Handler Evaluasi ---
+  const handleEvaluate = async () => {
+    if (!inputFile || !synthAudioUrl) {
+      return toast({
+        title: "Tidak dapat mengevaluasi",
+        description: "Pastikan sudah ada input dan hasil sintesis.",
+        variant: "destructive",
+      });
+    }
+
+    toast({ title: "Evaluasi dimulai...", description: "Menganalisis kemiripan suara." });
+
+    try {
+      const formData = new FormData();
+      formData.append("input", inputFile);
+
+      const res = await fetch("http://localhost:8080/evaluate", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await res.json();
+      setSimilarity(data.similarity ?? 0.9);
+
+      toast({
+        title: "Evaluasi selesai!",
+        description: "Nilai kemiripan berhasil dihitung.",
+      });
+    } catch (err: any) {
+      toast({
+        title: "Gagal evaluasi",
+        description: err.message || String(err),
+        variant: "destructive",
+      });
+    }
+  };
+
+  // --- Handler Simpan Parameter ---
+  const handleSaveParams = () => {
+    localStorage.setItem("fm_params", JSON.stringify(params));
+    toast({
+      title: "Parameter tersimpan",
+      description: "Parameter FM synthesis berhasil disimpan.",
+    });
+  };
+
   return (
-    <main className="flex min-h-screen flex-col items-center justify-between p-24">
-      <div className="z-10 w-full max-w-5xl items-center justify-between font-mono text-sm lg:flex">
-        <p className="fixed left-0 top-0 flex w-full justify-center border-b border-gray-300 bg-gradient-to-b from-zinc-200 pb-6 pt-8 backdrop-blur-2xl dark:border-neutral-800 dark:bg-zinc-800/30 dark:from-inherit lg:static lg:w-auto  lg:rounded-xl lg:border lg:bg-gray-200 lg:p-4 lg:dark:bg-zinc-800/30">
-          Get started by editing&nbsp;
-          <code className="font-mono font-bold">app/page.tsx</code>
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-100 text-gray-800 p-10 space-y-10">
+      {/* Header */}
+      <header className="space-y-2">
+        <h1 className="text-4xl font-semibold tracking-tight text-gray-900">
+          Capstone F-06 Gamasynth Dashboard
+        </h1>
+        <p className="text-gray-500">
+          Eksperimen sintesis suara gamelan menggunakan parameter FM.
         </p>
-        <div className="fixed bottom-0 left-0 flex h-48 w-full items-end justify-center bg-gradient-to-t from-white via-white dark:from-black dark:via-black lg:static lg:size-auto lg:bg-none">
-          <a
-            className="pointer-events-none flex place-items-center gap-2 p-8 lg:pointer-events-auto lg:p-0"
-            href="https://vercel.com?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            By{" "}
-            <Image
-              src="/vercel.svg"
-              alt="Vercel Logo"
-              className="dark:invert"
-              width={100}
-              height={24}
-              priority
-            />
-          </a>
-        </div>
+      </header>
+
+      {/* Grid Input & Hasil Sintesis */}
+      <div className="grid md:grid-cols-2 gap-10">
+        <Card className="bg-white border border-gray-200 shadow-md rounded-2xl hover:shadow-lg transition-all duration-300">
+          <CardHeader>
+            <CardTitle>Input Suara Gamelan</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <AudioUploader onUpload={handleUpload} />
+            <WaveformViewer file={inputFile} label="Gelombang Asli" />
+          </CardContent>
+        </Card>
+
+        <Card className="bg-white border border-gray-200 shadow-md rounded-2xl hover:shadow-lg transition-all duration-300">
+          <CardHeader>
+            <CardTitle>Hasil Sintesis</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {synthAudioUrl ? (
+              <WaveformViewer url={synthAudioUrl} label="Gelombang Sintesis" />
+            ) : (
+              <p className="text-sm text-gray-500 italic">Belum ada hasil sintesis.</p>
+            )}
+          </CardContent>
+        </Card>
       </div>
 
-      <div className="relative z-[-1] flex place-items-center before:absolute before:h-[300px] before:w-full before:-translate-x-1/2 before:rounded-full before:bg-gradient-radial before:from-white before:to-transparent before:blur-2xl before:content-[''] after:absolute after:-z-20 after:h-[180px] after:w-full after:translate-x-1/3 after:bg-gradient-conic after:from-sky-200 after:via-blue-200 after:blur-2xl after:content-[''] before:dark:bg-gradient-to-br before:dark:from-transparent before:dark:to-blue-700 before:dark:opacity-10 after:dark:from-sky-900 after:dark:via-[#0141ff] after:dark:opacity-40 sm:before:w-[480px] sm:after:w-[240px] before:lg:h-[360px]">
-        <Image
-          className="relative dark:drop-shadow-[0_0_0.3rem_#ffffff70] dark:invert"
-          src="/next.svg"
-          alt="Next.js Logo"
-          width={180}
-          height={37}
-          priority
-        />
-      </div>
+      {/* Kontrol FM */}
+      <Card className="bg-white border border-gray-200 shadow-md rounded-2xl hover:shadow-lg transition-all duration-300">
+        <CardHeader>
+          <CardTitle>Kontrol FM Synthesis</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <FmControls params={params} setParams={setParams} />
 
-      <div className="mb-32 grid text-center lg:mb-0 lg:w-full lg:max-w-5xl lg:grid-cols-4 lg:text-left">
-        <a
-          href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Docs{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-sm opacity-50">
-            Find in-depth information about Next.js features and API.
-          </p>
-        </a>
+          <div className="flex flex-wrap gap-3 mt-4">
+            <Button
+              className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-6 py-2 rounded-lg shadow-sm"
+              onClick={handleSynthesize}
+            >
+              Synthesize
+            </Button>
 
-        <a
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Learn{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-sm opacity-50">
-            Learn about Next.js in an interactive course with&nbsp;quizzes!
-          </p>
-        </a>
+            <Button
+              variant="outline"
+              className="border-gray-300 text-gray-700 hover:bg-gray-100"
+              onClick={handleEvaluate}
+            >
+              Evaluate
+            </Button>
 
-        <a
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Templates{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-sm opacity-50">
-            Explore starter templates for Next.js.
-          </p>
-        </a>
+            <Button
+              variant="ghost"
+              className="text-blue-700 hover:underline"
+              onClick={handleSaveParams}
+            >
+              Save Params
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
-        <a
-          href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Deploy{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-balance text-sm opacity-50">
-            Instantly deploy your Next.js site to a shareable URL with Vercel.
-          </p>
-        </a>
-      </div>
-    </main>
+      {/* Evaluation Card */}
+      {similarity !== null && <EvaluationCard score={similarity} />}
+    </div>
   );
 }
