@@ -35,23 +35,58 @@ export default function Dashboard() {
     });
   };
 
-  // --- Handler Sintesis ---
-  const handleSynthesize = async () => {
-    if (!inputFile) {
-      return toast({
-        title: "Tidak ada file!",
-        description: "Silakan unggah suara gamelan terlebih dahulu.",
+  // --- Handler Analyze ---
+  const handleAnalyze = async () => {
+    if (!inputFile)
+      return toast({ title: "Upload audio dulu!", variant: "destructive" });
+
+    toast({ title: "Mengirim audio ke MQTT...", description: "Harap tunggu." });
+
+    try {
+      const formData = new FormData();
+      formData.append("file", inputFile);
+
+      // Kirim ke API Next.js
+      const res = await fetch("/api/send-sound", {
+        method: "POST",
+        body: formData,
+      });
+
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || "Gagal kirim audio ke broker");
+
+      toast({
+        title: "Audio terkirim!",
+        description: "Audio berhasil dikirim ke Mosquitto broker.",
+      });
+
+      // (Opsional) lanjutkan analisis lokal di server Python
+      // const analyzeRes = await fetch("http://localhost:8080/analyze/", {
+      //   method: "POST",
+      //   body: formData,
+      // });
+      // const data = await analyzeRes.json();
+      // ...update parameter dll.
+
+    } catch (err: any) {
+      toast({
+        title: "Gagal kirim audio",
+        description: err.message || String(err),
         variant: "destructive",
       });
     }
+  };
+
+
+  // --- Handler Synthesize ---
+  const handleSynthesize = async () => {
+    if (!inputFile) return toast({ title: "Upload audio dulu!", variant: "destructive" });
 
     const formData = new FormData();
     formData.append("file", inputFile);
-    Object.entries(params).forEach(([key, value]) =>
-      formData.append(key, String(value))
-    );
+    Object.entries(params).forEach(([k, v]) => formData.append(k, String(v)));
 
-    toast({ title: "Sedang melakukan sintesis...", description: "Harap tunggu beberapa saat." });
+    toast({ title: "Sintesis dimulai...", description: "Harap tunggu beberapa saat." });
 
     try {
       const res = await fetch("http://localhost:8080/synthesize/", {
@@ -64,28 +99,16 @@ export default function Dashboard() {
       const blob = await res.blob();
       setSynthAudioUrl(URL.createObjectURL(blob));
 
-      toast({
-        title: "Sintesis berhasil!",
-        description: "Hasil suara sintetis siap untuk diputar.",
-      });
+      toast({ title: "Sintesis berhasil!", description: "Audio siap diputar." });
     } catch (err: any) {
-      toast({
-        title: "Gagal melakukan sintesis",
-        description: err.message || String(err),
-        variant: "destructive",
-      });
+      toast({ title: "Gagal sintesis", description: err.message || String(err), variant: "destructive" });
     }
   };
 
-  // --- Handler Evaluasi ---
+  // --- Handler Evaluate ---
   const handleEvaluate = async () => {
-    if (!inputFile || !synthAudioUrl) {
-      return toast({
-        title: "Tidak dapat mengevaluasi",
-        description: "Pastikan sudah ada input dan hasil sintesis.",
-        variant: "destructive",
-      });
-    }
+    if (!inputFile || !synthAudioUrl)
+      return toast({ title: "Tidak dapat evaluasi", description: "Upload & synth audio dulu.", variant: "destructive" });
 
     toast({ title: "Evaluasi dimulai...", description: "Menganalisis kemiripan suara." });
 
@@ -93,34 +116,20 @@ export default function Dashboard() {
       const formData = new FormData();
       formData.append("input", inputFile);
 
-      const res = await fetch("http://localhost:8080/evaluate", {
-        method: "POST",
-        body: formData,
-      });
-
+      const res = await fetch("http://localhost:8080/evaluate", { method: "POST", body: formData });
       const data = await res.json();
       setSimilarity(data.similarity ?? 0.9);
 
-      toast({
-        title: "Evaluasi selesai!",
-        description: "Nilai kemiripan berhasil dihitung.",
-      });
+      toast({ title: "Evaluasi selesai!", description: `Nilai kemiripan: ${(data.similarity * 100).toFixed(2)}%` });
     } catch (err: any) {
-      toast({
-        title: "Gagal evaluasi",
-        description: err.message || String(err),
-        variant: "destructive",
-      });
+      toast({ title: "Gagal evaluasi", description: err.message || String(err), variant: "destructive" });
     }
   };
 
   // --- Handler Simpan Parameter ---
   const handleSaveParams = () => {
     localStorage.setItem("fm_params", JSON.stringify(params));
-    toast({
-      title: "Parameter tersimpan",
-      description: "Parameter FM synthesis berhasil disimpan.",
-    });
+    toast({ title: "Parameter tersimpan", description: "Parameter FM synthesis berhasil disimpan." });
   };
 
   return (
@@ -130,9 +139,7 @@ export default function Dashboard() {
         <h1 className="text-4xl font-semibold tracking-tight text-gray-900">
           Capstone F-06 Gamasynth Dashboard
         </h1>
-        <p className="text-gray-500">
-          Eksperimen sintesis suara gamelan menggunakan parameter FM.
-        </p>
+        <p className="text-gray-500">Eksperimen sintesis suara gamelan menggunakan parameter FM.</p>
       </header>
 
       {/* Grid Input & Hasil Sintesis */}
@@ -144,6 +151,9 @@ export default function Dashboard() {
           <CardContent className="space-y-4">
             <AudioUploader onUpload={handleUpload} />
             <WaveformViewer file={inputFile} label="Gelombang Asli" />
+            <Button variant="outline" onClick={handleAnalyze} className="mt-2">
+              Analyze Audio (Get Params)
+            </Button>
           </CardContent>
         </Card>
 
@@ -170,26 +180,15 @@ export default function Dashboard() {
           <FmControls params={params} setParams={setParams} />
 
           <div className="flex flex-wrap gap-3 mt-4">
-            <Button
-              className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-6 py-2 rounded-lg shadow-sm"
-              onClick={handleSynthesize}
-            >
+            <Button className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-6 py-2 rounded-lg shadow-sm" onClick={handleSynthesize}>
               Synthesize
             </Button>
 
-            <Button
-              variant="outline"
-              className="border-gray-300 text-gray-700 hover:bg-gray-100"
-              onClick={handleEvaluate}
-            >
+            <Button variant="outline" className="border-gray-300 text-gray-700 hover:bg-gray-100" onClick={handleEvaluate}>
               Evaluate
             </Button>
 
-            <Button
-              variant="ghost"
-              className="text-blue-700 hover:underline"
-              onClick={handleSaveParams}
-            >
+            <Button variant="ghost" className="text-blue-700 hover:underline" onClick={handleSaveParams}>
               Save Params
             </Button>
           </div>
