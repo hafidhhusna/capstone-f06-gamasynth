@@ -142,6 +142,8 @@ async def analyze_parameters(file: UploadFile = File(...)):
     seg_len = min(len(y_ref), sr * 3)
     y_ref_seg = y_ref[:seg_len]
 
+    duration = len(y_ref) / sr
+
     peak_freqs, peak_amps, _, _ = find_peaks_fft(y_ref_seg, sr, n_peaks=20)
     f_c = peak_freqs[np.argmax(peak_amps)]
     candidates = [f for f in np.sort(peak_freqs) if f > f_c + 20]
@@ -187,3 +189,4 @@ async def send_to_stm32(params: dict):
     client.disconnect()
 
     return {"status": "sent", "topic": topic, "payload": params}
+
