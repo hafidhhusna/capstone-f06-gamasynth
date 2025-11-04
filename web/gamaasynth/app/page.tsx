@@ -40,42 +40,33 @@ export default function Dashboard() {
     if (!inputFile)
       return toast({ title: "Upload audio dulu!", variant: "destructive" });
 
-    toast({ title: "Mengirim audio ke MQTT...", description: "Harap tunggu." });
+    toast({ title: "Mengirim audio...", description: "Harap tunggu." });
 
     try {
       const formData = new FormData();
       formData.append("file", inputFile);
 
-      // Kirim ke API Next.js
-      const res = await fetch("/api/send-sound", {
-        method: "POST",
-        body: formData,
-      });
+      const res = await fetch("/api/analyze-and-send", { method: "POST", body: formData });
+      const data = await res.json();
 
-      const result = await res.json();
-      if (!res.ok) throw new Error(result.error || "Gagal kirim audio ke broker");
+      if (!res.ok) throw new Error(data.error || "Gagal analisis audio");
+
+      setParams(data.params);
 
       toast({
-        title: "Audio terkirim!",
-        description: "Audio berhasil dikirim ke Mosquitto broker.",
+        title: "Selesai!",
+        description: "Parameter FM diterima dan dikirim ke STM32 via MQTT.",
       });
-
-      // (Opsional) lanjutkan analisis lokal di server Python
-      // const analyzeRes = await fetch("http://localhost:8080/analyze/", {
-      //   method: "POST",
-      //   body: formData,
-      // });
-      // const data = await analyzeRes.json();
-      // ...update parameter dll.
-
     } catch (err: any) {
       toast({
-        title: "Gagal kirim audio",
+        title: "Gagal analisis audio",
         description: err.message || String(err),
         variant: "destructive",
       });
     }
   };
+
+
 
 
   // --- Handler Synthesize ---
