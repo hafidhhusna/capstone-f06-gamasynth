@@ -4,12 +4,14 @@ import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import SynthesisLogTable from "@/components/SynthesisLogTable";
+import SynthesisLogTable, { SynthesisLogEntry } from "@/components/SynthesisLogTable";
 
 import AudioUploader from "@/components/AudioUploader";
 import WaveformViewer from "@/components/WaveFormViewer";
 import FmControls from "@/components/FmControls";
+import SynthTabs from "@/components/SynthTabs";
 
+// FastAPI param type
 type FMParamsFastAPI = {
   carrier_frequency_fc: number;
   modulator_frequency_fm: number;
@@ -26,6 +28,7 @@ type FMParamsFastAPI = {
   detune_step: number;
 };
 
+// Frontend param type untuk FmControls
 type FMParamsFrontend = {
   carrierFreq: number;
   modFreq: number;
@@ -35,28 +38,15 @@ type FMParamsFrontend = {
   noiseLevel: number;
 };
 
-// Tambahkan setelah import React hooks dan komponen lainnya
-type SynthesisLog = {
-  no: number;
-  fileName: string;
-  fc: number;
-  fm: number;
-  index: number;
-  attack: number;
-  decay: number;
-  noise: number;
-};
-
-
 export default function Dashboard() {
   const { toast } = useToast();
 
   // --- States utama ---
   const [inputFile, setInputFile] = useState<File | null>(null);
-  const [inputAudioUrl, setInputAudioUrl] = useState<string | null>(null); // blob URL untuk audio asli
+  const [inputAudioUrl, setInputAudioUrl] = useState<string | null>(null);
   const [synthAudioUrl, setSynthAudioUrl] = useState<string | null>(null);
   const [paramsAPI, setParamsAPI] = useState<FMParamsFastAPI | null>(null);
-  const [synthLog, setSynthLog] = useState<SynthesisLog[]>([]);
+  const [synthLog, setSynthLog] = useState<SynthesisLogEntry[]>([]);
 
   // --- Mapping FastAPI params ke FmControls ---
   const mapParams = (p: FMParamsFastAPI): FMParamsFrontend => ({
@@ -68,22 +58,17 @@ export default function Dashboard() {
     noiseLevel: p.noise_level ?? 0,
   });
 
-  // cleanup blob URLs on unmount
+  // Cleanup blob URLs on unmount
   useEffect(() => {
     return () => {
       if (inputAudioUrl) URL.revokeObjectURL(inputAudioUrl);
       if (synthAudioUrl) URL.revokeObjectURL(synthAudioUrl);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, );
 
   // --- Handler Upload ---
   const handleUpload = (file: File) => {
-    // cleanup previous input blob if any
-    if (inputAudioUrl) {
-      URL.revokeObjectURL(inputAudioUrl);
-      setInputAudioUrl(null);
-    }
+    if (inputAudioUrl) URL.revokeObjectURL(inputAudioUrl);
     const url = URL.createObjectURL(file);
     setInputAudioUrl(url);
     setInputFile(file);
@@ -103,7 +88,6 @@ export default function Dashboard() {
       const formData = new FormData();
       formData.append("file", inputFile);
 
-      // Pastikan route Next.js App Router yang mem-proxy FastAPI tersedia: /api/approx-params-send
       const res = await fetch("/api/approx-params-send", { method: "POST", body: formData });
       const result = await res.json();
 
@@ -124,32 +108,28 @@ export default function Dashboard() {
     toast({ title: "Sintesis dimulai...", description: "Harap tunggu beberapa saat." });
 
     try {
-      // cleanup synth blob URL lama
       if (synthAudioUrl) {
         URL.revokeObjectURL(synthAudioUrl);
         setSynthAudioUrl(null);
       }
 
       const formData = new FormData();
-      // opsional: kirim file asli juga (beberapa synth impl membutuhkan input)
       if (inputFile) formData.append("file", inputFile);
-      // kirim semua paramsAPI fields
       Object.entries(paramsAPI).forEach(([k, v]) => formData.append(k, String(v)));
 
-      // Panggil FastAPI synth endpoint (ubah host/port jika perlu)
       const res = await fetch("http://localhost:8080/synthesize/", { method: "POST", body: formData });
-      if (!res.ok) {
-        const text = await res.text().catch(() => "");
-        throw new Error(text || "Gagal sintesis");
-      }
+      if (!res.ok) throw new Error(await res.text());
 
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
 
+      // Tambahkan log sesuai tipe SynthesisLogEntry
       setSynthLog((prev) => [
         ...prev,
         {
-          no: prev.length + 1,
+          id: prev.length + 1,
+          source: "Python",
+          audioUrl: url,
           fileName: inputFile?.name ?? "unknown.wav",
           fc: paramsAPI.carrier_frequency_fc ?? 0,
           fm: paramsAPI.modulator_frequency_fm ?? 0,
@@ -157,7 +137,9 @@ export default function Dashboard() {
           attack: paramsAPI.attack_rate ?? 0,
           decay: paramsAPI.decay_rate ?? 0,
           noise: paramsAPI.noise_level ?? 0,
-        }])
+        },
+      ]);
+
       setSynthAudioUrl(url);
 
       toast({ title: "Sintesis berhasil!", description: "Audio siap diputar." });
@@ -182,12 +164,7 @@ export default function Dashboard() {
           <CardContent className="space-y-4">
             <AudioUploader onUpload={handleUpload} />
             <WaveformViewer file={inputFile} label="Gelombang Asli" />
-
-            {/* audio player untuk file asli */}
-            {inputAudioUrl && (
-              <audio controls src={inputAudioUrl} className="w-full rounded-lg border border-gray-300" />
-            )}
-
+            {inputAudioUrl && <audio controls src={inputAudioUrl} className="w-full rounded-lg border border-gray-300" />}
             <div className="flex gap-2 mt-2">
               <Button variant="outline" onClick={handleAnalyze} disabled={!inputFile}>Analyze</Button>
             </div>
@@ -222,7 +199,6 @@ export default function Dashboard() {
               params={mapParams(paramsAPI)}
               setParams={(updated) => {
                 if (!paramsAPI) return;
-                // pastikan semua field tetap number (fallback)
                 setParamsAPI({
                   ...paramsAPI,
                   carrier_frequency_fc: updated.carrierFreq ?? paramsAPI.carrier_frequency_fc,
@@ -239,12 +215,23 @@ export default function Dashboard() {
           )}
         </CardContent>
       </Card>
+
+      <Card className="bg-white border border-gray-200 shadow-md rounded-2xl">
+        <CardHeader>
+          <CardTitle>Komparasi Hasil Sintesis</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <SynthTabs logs={synthLog} />
+        </CardContent>
+      </Card>
+
+      {/* Log Iterasi Sintesis */}
       <Card className="bg-white border border-gray-200 shadow-md rounded-2xl">
         <CardHeader>
           <CardTitle>Log Iterasi Sintesis</CardTitle>
         </CardHeader>
         <CardContent>
-          <SynthesisLogTable logs={synthLog} />
+          <SynthesisLogTable log={synthLog} />
         </CardContent>
       </Card>
     </div>

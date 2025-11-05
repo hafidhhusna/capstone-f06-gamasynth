@@ -6,7 +6,12 @@ import { Card } from "@/components/ui/card";
 
 interface Props {
   file?: File | null;
-  url?: string;
+  url?: string | string[]; // Bisa single URL atau array URL
+  label?: string;
+}
+
+interface Track {
+  url: string;
   label?: string;
 }
 
@@ -16,14 +21,26 @@ export default function WaveformViewer({ file, url, label }: Props) {
   const [timestamp, setTimestamp] = useState<number>(0);
   const [amplitude, setAmplitude] = useState<number>(0);
 
+  // Konversi URL/file ke track array
+  // ubah pembuatan tracks
+  const tracks: Track[] = [];
+  if (file) {
+    const fileUrl = URL.createObjectURL(file);
+    tracks.push({ url: fileUrl, label: "Input File" });
+  } else if (Array.isArray(url)) {
+    url.forEach((u, idx) => tracks.push({ url: u, label: `Track ${idx + 1}` }));
+  } else if (url) {
+    tracks.push({ url, label: "Track" });
+  }
+
+
   useEffect(() => {
     const containerEl = containerRef.current;
-    if (!containerEl) return;
-    if (!file && !url) return;
+    if (!containerEl || tracks.length === 0) return;
 
     let isDestroyed = false;
 
-    // Hancurkan instance lama jika ada
+    // Cleanup lama
     if (waveSurferRef.current) {
       waveSurferRef.current.destroy();
     }
@@ -43,11 +60,7 @@ export default function WaveformViewer({ file, url, label }: Props) {
 
     const resizeObserver = new ResizeObserver(() => {
       if (isDestroyed) return;
-      wavesurfer.setOptions({
-        height: 200,
-        waveColor: "#93c5fd",
-        progressColor: "#2563eb",
-      });
+      wavesurfer.setOptions({ height: 200 });
     });
     resizeObserver.observe(containerEl);
 
@@ -58,11 +71,8 @@ export default function WaveformViewer({ file, url, label }: Props) {
         const buffer = await wavesurfer.getDecodedData();
         if (buffer) audioBuffer = buffer;
       } catch (err) {
-        if (err instanceof DOMException && err.name === "AbortError") {
-          console.debug("WaveSurfer decoding aborted safely.");
-        } else {
-          console.error("WaveSurfer decode error:", err);
-        }
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        console.error("WaveSurfer decode error:", err);
       }
     });
 
@@ -78,46 +88,42 @@ export default function WaveformViewer({ file, url, label }: Props) {
 
       const channelData = audioBuffer.getChannelData(0);
       const index = Math.floor(relX * channelData.length);
-      const value = channelData[index] || 0;
-      setAmplitude(value);
+      setAmplitude(channelData[index] || 0);
     };
 
     containerEl.addEventListener("mousemove", handleMove);
 
-    const loadAudio = async () => {
-      try {
-        if (file) {
-          const objectUrl = URL.createObjectURL(file);
-          await wavesurfer.load(objectUrl);
-          URL.revokeObjectURL(objectUrl);
-        } else if (url) {
-          await wavesurfer.load(url);
-        }
-      } catch (err) {
-        if (err instanceof DOMException && err.name === "AbortError") {
-          console.debug("WaveSurfer load aborted safely.");
-        } else {
+    const loadTracks = async () => {
+      for (const t of tracks) {
+        try {
+          await wavesurfer.load(t.url);
+        } catch (err) {
+          if (err instanceof DOMException && err.name === "AbortError") return;
           console.error("WaveSurfer load error:", err);
         }
       }
     };
 
-    loadAudio();
+    loadTracks();
 
     return () => {
       isDestroyed = true;
       resizeObserver.disconnect();
       containerEl.removeEventListener("mousemove", handleMove);
       wavesurfer.destroy();
+
+      // revoke URL dari File object
+      if (file) {
+        tracks.forEach((t) => URL.revokeObjectURL(t.url));
+      }
     };
-  }, [file, url]);
+
+  }, [file, url]); // Perbarui jika file atau url berubah
 
   return (
     <Card className="my-6 border border-gray-200 shadow-sm p-4 bg-white/60 backdrop-blur-sm">
       {label && (
-        <p className="text-sm mb-3 text-gray-700 font-semibold text-center">
-          {label}
-        </p>
+        <p className="text-sm mb-3 text-gray-700 font-semibold text-center">{label}</p>
       )}
 
       <div className="relative">

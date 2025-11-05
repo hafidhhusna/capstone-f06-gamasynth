@@ -1,68 +1,61 @@
 "use client";
 
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
 
-type LogEntry = {
-  no: number;
+export interface SynthesisLogEntry {
+  id: number;
   fileName: string;
+  source: "STM32" | "Python";
   fc: number;
   fm: number;
   index: number;
   attack: number;
   decay: number;
   noise: number;
-};
-
-interface SynthesisLogTableProps {
-  logs: LogEntry[];
+  audioUrl: string;
 }
 
-export default function SynthesisLogTable({ logs }: SynthesisLogTableProps) {
-  if (!logs.length) {
-    return (
-      <p className="text-sm text-gray-500 italic">
-        Belum ada log sintesis yang tersimpan.
-      </p>
-    );
-  }
+interface Props {
+  log: SynthesisLogEntry[];
+  onPlay?: (url: string) => void;
+}
 
+export default function SynthesisLogTable({ log, onPlay }: Props) {
   return (
-    <div className="rounded-xl border border-gray-200 overflow-hidden bg-white shadow-sm">
-      <Table>
-        <TableHeader className="bg-gray-50">
-          <TableRow>
-            <TableHead>No</TableHead>
-            <TableHead>Nama File</TableHead>
-            <TableHead>Frekuensi Carrier</TableHead>
-            <TableHead>Frekuensi Modulator</TableHead>
-            <TableHead>Index</TableHead>
-            <TableHead>Attack</TableHead>
-            <TableHead>Decay</TableHead>
-            <TableHead>Noise</TableHead>
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>No</TableHead>
+          <TableHead>File</TableHead>
+          <TableHead>Source</TableHead>
+          <TableHead>Fc</TableHead>
+          <TableHead>Fm</TableHead>
+          <TableHead>Index</TableHead>
+          <TableHead>Attack</TableHead>
+          <TableHead>Decay</TableHead>
+          <TableHead>Noise</TableHead>
+          <TableHead>Play</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {log.map((entry) => (
+          <TableRow key={entry.id}>
+            <TableCell>{entry.id}</TableCell>
+            <TableCell>{entry.fileName}</TableCell>
+            <TableCell>{entry.source}</TableCell>
+            <TableCell>{entry.fc}</TableCell>
+            <TableCell>{entry.fm}</TableCell>
+            <TableCell>{entry.index}</TableCell>
+            <TableCell>{entry.attack}</TableCell>
+            <TableCell>{entry.decay}</TableCell>
+            <TableCell>{entry.noise}</TableCell>
+            <TableCell>
+              {onPlay && <Button size="sm" onClick={() => onPlay(entry.audioUrl)}>Play</Button>}
+            </TableCell>
           </TableRow>
-        </TableHeader>
-        <TableBody>
-          {logs.map((log) => (
-            <TableRow key={log.no}>
-              <TableCell>{log.no}</TableCell>
-              <TableCell>{log.fileName}</TableCell>
-              <TableCell>{log.fc.toFixed(2)}</TableCell>
-              <TableCell>{log.fm.toFixed(2)}</TableCell>
-              <TableCell>{log.index.toFixed(2)}</TableCell>
-              <TableCell>{log.attack.toFixed(2)}</TableCell>
-              <TableCell>{log.decay.toFixed(2)}</TableCell>
-              <TableCell>{log.noise.toFixed(2)}</TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </div>
+        ))}
+      </TableBody>
+    </Table>
   );
 }
