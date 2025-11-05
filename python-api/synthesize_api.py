@@ -6,7 +6,6 @@ import soundfile as sf
 from scipy import signal
 import os
 import tempfile
-import paho.mqtt.client as mqtt
 import json
 
 app = FastAPI()
@@ -31,7 +30,7 @@ def read_mono(path):
 def find_peaks_fft(y, sr, n_peaks=6, min_freq=20):
     N = len(y)
     S = np.abs(np.fft.rfft(y * np.hanning(N)))
-    freqs = np.fft.rfftfreq(N, 1/sr)
+    freqs = np.fft.rfftfreq(N, 1 / sr)
     mask = freqs > min_freq
     freqs = freqs[mask]
     S = S[mask]
@@ -43,7 +42,7 @@ def find_peaks_fft(y, sr, n_peaks=6, min_freq=20):
 def estimate_I_simple(y, sr, f_c, f_m):
     N = len(y)
     S = np.abs(np.fft.rfft(y * np.hanning(N)))
-    freqs = np.fft.rfftfreq(N, 1/sr)
+    freqs = np.fft.rfftfreq(N, 1 / sr)
     idx_c = np.argmin(np.abs(freqs - f_c))
     idx_sb = np.argmin(np.abs(freqs - (f_c + f_m)))
     amp_c = S[idx_c]
@@ -61,7 +60,7 @@ def synth_improved(f_c, f_m, I0, duration=7.0, sr=44100,
     t = np.linspace(0, duration, int(sr * duration), endpoint=False)
     N = len(t)
 
-    # --- Transient noise ---
+    # Transient noise
     trans_samples = int(sr * (noise_ms / 1000.0))
     noise = np.random.randn(N)
     noise_burst = np.zeros(N)
@@ -71,65 +70,35 @@ def synth_improved(f_c, f_m, I0, duration=7.0, sr=44100,
     nyq = sr / 2
     low = max(20.0, f_c * (1 - bp_bw))
     high = min(nyq - 100, f_c * (1 + bp_bw))
-    b, a = signal.butter(2, [low / nyq, high / nyq], btype='band')
+    b, a = signal.butter(2, [low / nyq, high / nyq], btype="band")
     colored_noise = signal.lfilter(b, a, noise_burst)
 
-    # --- Envelope ---
+    # Envelope
     env_attack = 1.0 - np.exp(-attack_rate * t)
     env_decay = np.exp(-decay_rate * t)
     amp_env = env_attack * env_decay
 
-    # --- FM synthesis ---
+    # FM synthesis
     mod2 = secondary_mod_ratio * I0 * np.sin(2 * np.pi * (f_m * 1.6) * t)
     I_t = I0 * np.exp(-2.0 * t)
     y_fm = np.sin(2 * np.pi * f_c * t + (I_t * np.sin(2 * np.pi * f_m * t) + mod2))
 
-    # --- Additive partials ---
+    # Additive partials
     partials = np.zeros(N)
     for n in range(1, add_partials + 1):
         detune = 1.0 + detune_step * (n - 1)
         amp = np.exp(-partial_decay * (n - 1))
         partials += amp * np.sin(2 * np.pi * (f_c * n * detune) * t)
 
-    # --- Combine ---
+    # Combine
     y = 0.9 * amp_env * (0.8 * y_fm + 0.5 * partials) + noise_level * colored_noise
     b2, a2 = signal.iirpeak(f_c / nyq, Q=10)
     y = signal.lfilter(b2, a2, y)
     y = y / (np.max(np.abs(y)) + 1e-12)
     return y, sr
 
-
 # ===============================
-# 1️⃣ Endpoint: Synthesize
-# ===============================
-@app.post("/synthesize/")
-async def synthesize(file: UploadFile = File(...)):
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
-        contents = await file.read()
-        tmp.write(contents)
-        tmp_path = tmp.name
-
-    # --- Analysis stage ---
-    y_ref, sr = read_mono(tmp_path)
-    seg_len = min(len(y_ref), sr * 3)
-    y_ref_seg = y_ref[:seg_len]
-
-    peak_freqs, peak_amps, _, _ = find_peaks_fft(y_ref_seg, sr, n_peaks=20)
-    f_c = peak_freqs[np.argmax(peak_amps)]
-    candidates = [f for f in np.sort(peak_freqs) if f > f_c + 20]
-    f_m = candidates[0] - f_c if len(candidates) > 0 else f_c * 0.5
-    I_est, ratio = estimate_I_simple(y_ref_seg, sr, f_c, f_m)
-
-    # --- Synthesis ---
-    y_new, sr_out = synth_improved(f_c, f_m, I_est, sr=sr)
-    out_path = tmp_path.replace(".wav", "_synth.wav")
-    sf.write(out_path, y_new.astype(np.float32), sr_out)
-
-    return FileResponse(out_path, media_type="audio/wav", filename="synthesized.wav")
-
-
-# ===============================
-# 2️⃣ Endpoint: Analyze Parameters
+# Endpoint: Analyze Parameters
 # ===============================
 @app.post("/analyze/")
 async def analyze_parameters(file: UploadFile = File(...)):
@@ -169,24 +138,46 @@ async def analyze_parameters(file: UploadFile = File(...)):
     os.remove(tmp_path)
     return JSONResponse(params)
 
-
 # ===============================
-# 3️⃣ Endpoint: Send Parameters to STM32 via MQTT
+# Endpoint: Synthesize (dengan parameter user)
 # ===============================
-@app.post("/send_to_stm32/")
-async def send_to_stm32(params: dict):
-    # --- Konfigurasi MQTT ---
-    broker = "broker.hivemq.com"
-    port = 1883
-    topic = "gamelan/synth_params"
+@app.post("/synthesize/")
+async def synthesize(
+    file: UploadFile = File(...),
+    carrier_frequency_fc: float = Form(...),
+    modulator_frequency_fm: float = Form(...),
+    modulation_index_I: float = Form(...),
+    attack_rate: float = Form(...),
+    decay_rate: float = Form(...),
+    noise_level: float = Form(...),
+    duration: float = Form(7.0),
+    sampling_rate: int = Form(44100),
+    add_partials: int = Form(10),
+    bp_bw: float = Form(0.25),
+    secondary_mod_ratio: float = Form(0.25),
+    detune_step: float = Form(0.0015),
+):
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+        contents = await file.read()
+        tmp.write(contents)
+        tmp_path = tmp.name
 
-    client = mqtt.Client()
-    client.connect(broker, port, 60)
+    # Gunakan parameter dari user (dikirim via frontend)
+    y_new, sr_out = synth_improved(
+        carrier_frequency_fc,
+        modulator_frequency_fm,
+        modulation_index_I,
+        duration=duration,
+        sr=sampling_rate,
+        attack_rate=attack_rate,
+        decay_rate=decay_rate,
+        noise_level=noise_level,
+        add_partials=add_partials,
+        bp_bw=bp_bw,
+        secondary_mod_ratio=secondary_mod_ratio,
+        detune_step=detune_step,
+    )
 
-    # --- Kirim parameter sebagai JSON ---
-    payload = json.dumps(params)
-    client.publish(topic, payload)
-    client.disconnect()
-
-    return {"status": "sent", "topic": topic, "payload": params}
-
+    out_path = tmp_path.replace(".wav", "_synth.wav")
+    sf.write(out_path, y_new.astype(np.float32), sr_out)
+    return FileResponse(out_path, media_type="audio/wav", filename="synthesized.wav")

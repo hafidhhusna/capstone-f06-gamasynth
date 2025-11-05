@@ -1,103 +1,164 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import SynthesisLogTable from "@/components/SynthesisLogTable";
 
 import AudioUploader from "@/components/AudioUploader";
 import WaveformViewer from "@/components/WaveFormViewer";
 import FmControls from "@/components/FmControls";
-import EvaluationCard from "@/components/EvaluationCard";
+
+type FMParamsFastAPI = {
+  carrier_frequency_fc: number;
+  modulator_frequency_fm: number;
+  modulation_index_I: number;
+  duration: number;
+  sampling_rate: number;
+  attack_rate: number;
+  decay_rate: number;
+  noise_level: number;
+  noise_ms: number;
+  add_partials: number;
+  bp_bw: number;
+  secondary_mod_ratio: number;
+  detune_step: number;
+};
+
+type FMParamsFrontend = {
+  carrierFreq: number;
+  modFreq: number;
+  modIndex: number;
+  attack: number;
+  decay: number;
+  noiseLevel: number;
+};
+
+// Tambahkan setelah import React hooks dan komponen lainnya
+type SynthesisLog = {
+  no: number;
+  fileName: string;
+  fc: number;
+  fm: number;
+  index: number;
+  attack: number;
+  decay: number;
+  noise: number;
+};
+
 
 export default function Dashboard() {
   const { toast } = useToast();
 
   // --- States utama ---
   const [inputFile, setInputFile] = useState<File | null>(null);
+  const [inputAudioUrl, setInputAudioUrl] = useState<string | null>(null); // blob URL untuk audio asli
   const [synthAudioUrl, setSynthAudioUrl] = useState<string | null>(null);
-  const [similarity, setSimilarity] = useState<number | null>(null);
+  const [paramsAPI, setParamsAPI] = useState<FMParamsFastAPI | null>(null);
+  const [synthLog, setSynthLog] = useState<SynthesisLog[]>([]);
 
-  const [params, setParams] = useState({
-    carrierFreq: 220,
-    modFreq: 440,
-    modIndex: 2,
-    attack: 0.1,
-    decay: 0.5,
+  // --- Mapping FastAPI params ke FmControls ---
+  const mapParams = (p: FMParamsFastAPI): FMParamsFrontend => ({
+    carrierFreq: p.carrier_frequency_fc ?? 0,
+    modFreq: p.modulator_frequency_fm ?? 0,
+    modIndex: p.modulation_index_I ?? 0,
+    attack: p.attack_rate ?? 0,
+    decay: p.decay_rate ?? 0,
+    noiseLevel: p.noise_level ?? 0,
   });
+
+  // cleanup blob URLs on unmount
+  useEffect(() => {
+    return () => {
+      if (inputAudioUrl) URL.revokeObjectURL(inputAudioUrl);
+      if (synthAudioUrl) URL.revokeObjectURL(synthAudioUrl);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // --- Handler Upload ---
   const handleUpload = (file: File) => {
+    // cleanup previous input blob if any
+    if (inputAudioUrl) {
+      URL.revokeObjectURL(inputAudioUrl);
+      setInputAudioUrl(null);
+    }
+    const url = URL.createObjectURL(file);
+    setInputAudioUrl(url);
     setInputFile(file);
     toast({
       title: "File berhasil diunggah",
-      description: `${file.name} siap untuk disintesis.`,
+      description: `${file.name} siap untuk dianalisis.`,
     });
   };
 
   // --- Handler Analyze ---
   const handleAnalyze = async () => {
-    if (!inputFile)
-      return toast({ title: "Upload audio dulu!", variant: "destructive" });
+    if (!inputFile) return toast({ title: "Upload audio dulu!", variant: "destructive" });
 
-    toast({ title: "Mengirim audio ke MQTT...", description: "Harap tunggu." });
+    toast({ title: "Analisis audio...", description: "Mengambil parameter dari FastAPI" });
 
     try {
       const formData = new FormData();
       formData.append("file", inputFile);
 
-      // Kirim ke API Next.js
-      const res = await fetch("/api/send-sound", {
-        method: "POST",
-        body: formData,
-      });
-
+      // Pastikan route Next.js App Router yang mem-proxy FastAPI tersedia: /api/approx-params-send
+      const res = await fetch("/api/approx-params-send", { method: "POST", body: formData });
       const result = await res.json();
-      if (!res.ok) throw new Error(result.error || "Gagal kirim audio ke broker");
 
-      toast({
-        title: "Audio terkirim!",
-        description: "Audio berhasil dikirim ke Mosquitto broker.",
-      });
+      if (!res.ok || !result.params) throw new Error(result.error || "Gagal analisis");
 
-      // (Opsional) lanjutkan analisis lokal di server Python
-      // const analyzeRes = await fetch("http://localhost:8080/analyze/", {
-      //   method: "POST",
-      //   body: formData,
-      // });
-      // const data = await analyzeRes.json();
-      // ...update parameter dll.
+      setParamsAPI(result.params);
 
+      toast({ title: "Parameter diterima!", description: "Siap untuk sintesis." });
     } catch (err: any) {
-      toast({
-        title: "Gagal kirim audio",
-        description: err.message || String(err),
-        variant: "destructive",
-      });
+      toast({ title: "Gagal analisis", description: err.message || String(err), variant: "destructive" });
     }
   };
 
-
   // --- Handler Synthesize ---
   const handleSynthesize = async () => {
-    if (!inputFile) return toast({ title: "Upload audio dulu!", variant: "destructive" });
-
-    const formData = new FormData();
-    formData.append("file", inputFile);
-    Object.entries(params).forEach(([k, v]) => formData.append(k, String(v)));
+    if (!paramsAPI) return toast({ title: "Belum ada parameter", variant: "destructive" });
 
     toast({ title: "Sintesis dimulai...", description: "Harap tunggu beberapa saat." });
 
     try {
-      const res = await fetch("http://localhost:8080/synthesize/", {
-        method: "POST",
-        body: formData,
-      });
+      // cleanup synth blob URL lama
+      if (synthAudioUrl) {
+        URL.revokeObjectURL(synthAudioUrl);
+        setSynthAudioUrl(null);
+      }
 
-      if (!res.ok) throw new Error("Gagal melakukan sintesis");
+      const formData = new FormData();
+      // opsional: kirim file asli juga (beberapa synth impl membutuhkan input)
+      if (inputFile) formData.append("file", inputFile);
+      // kirim semua paramsAPI fields
+      Object.entries(paramsAPI).forEach(([k, v]) => formData.append(k, String(v)));
+
+      // Panggil FastAPI synth endpoint (ubah host/port jika perlu)
+      const res = await fetch("http://localhost:8080/synthesize/", { method: "POST", body: formData });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(text || "Gagal sintesis");
+      }
 
       const blob = await res.blob();
-      setSynthAudioUrl(URL.createObjectURL(blob));
+      const url = URL.createObjectURL(blob);
+
+      setSynthLog((prev) => [
+        ...prev,
+        {
+          no: prev.length + 1,
+          fileName: inputFile?.name ?? "unknown.wav",
+          fc: paramsAPI.carrier_frequency_fc ?? 0,
+          fm: paramsAPI.modulator_frequency_fm ?? 0,
+          index: paramsAPI.modulation_index_I ?? 0,
+          attack: paramsAPI.attack_rate ?? 0,
+          decay: paramsAPI.decay_rate ?? 0,
+          noise: paramsAPI.noise_level ?? 0,
+        }])
+      setSynthAudioUrl(url);
 
       toast({ title: "Sintesis berhasil!", description: "Audio siap diputar." });
     } catch (err: any) {
@@ -105,98 +166,87 @@ export default function Dashboard() {
     }
   };
 
-  // --- Handler Evaluate ---
-  const handleEvaluate = async () => {
-    if (!inputFile || !synthAudioUrl)
-      return toast({ title: "Tidak dapat evaluasi", description: "Upload & synth audio dulu.", variant: "destructive" });
-
-    toast({ title: "Evaluasi dimulai...", description: "Menganalisis kemiripan suara." });
-
-    try {
-      const formData = new FormData();
-      formData.append("input", inputFile);
-
-      const res = await fetch("http://localhost:8080/evaluate", { method: "POST", body: formData });
-      const data = await res.json();
-      setSimilarity(data.similarity ?? 0.9);
-
-      toast({ title: "Evaluasi selesai!", description: `Nilai kemiripan: ${(data.similarity * 100).toFixed(2)}%` });
-    } catch (err: any) {
-      toast({ title: "Gagal evaluasi", description: err.message || String(err), variant: "destructive" });
-    }
-  };
-
-  // --- Handler Simpan Parameter ---
-  const handleSaveParams = () => {
-    localStorage.setItem("fm_params", JSON.stringify(params));
-    toast({ title: "Parameter tersimpan", description: "Parameter FM synthesis berhasil disimpan." });
-  };
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-100 text-gray-800 p-10 space-y-10">
       {/* Header */}
       <header className="space-y-2">
-        <h1 className="text-4xl font-semibold tracking-tight text-gray-900">
-          Capstone F-06 Gamasynth Dashboard
-        </h1>
+        <h1 className="text-4xl font-semibold tracking-tight text-gray-900">Capstone F-06 Gamasynth Dashboard</h1>
         <p className="text-gray-500">Eksperimen sintesis suara gamelan menggunakan parameter FM.</p>
       </header>
 
       {/* Grid Input & Hasil Sintesis */}
       <div className="grid md:grid-cols-2 gap-10">
+        {/* Input Card */}
         <Card className="bg-white border border-gray-200 shadow-md rounded-2xl hover:shadow-lg transition-all duration-300">
-          <CardHeader>
-            <CardTitle>Input Suara Gamelan</CardTitle>
-          </CardHeader>
+          <CardHeader><CardTitle>Input Suara Gamelan</CardTitle></CardHeader>
           <CardContent className="space-y-4">
             <AudioUploader onUpload={handleUpload} />
             <WaveformViewer file={inputFile} label="Gelombang Asli" />
-            <Button variant="outline" onClick={handleAnalyze} className="mt-2">
-              Analyze Audio (Get Params)
-            </Button>
+
+            {/* audio player untuk file asli */}
+            {inputAudioUrl && (
+              <audio controls src={inputAudioUrl} className="w-full rounded-lg border border-gray-300" />
+            )}
+
+            <div className="flex gap-2 mt-2">
+              <Button variant="outline" onClick={handleAnalyze} disabled={!inputFile}>Analyze</Button>
+            </div>
           </CardContent>
         </Card>
 
+        {/* Synth Card */}
         <Card className="bg-white border border-gray-200 shadow-md rounded-2xl hover:shadow-lg transition-all duration-300">
-          <CardHeader>
-            <CardTitle>Hasil Sintesis</CardTitle>
-          </CardHeader>
+          <CardHeader><CardTitle>Hasil Sintesis</CardTitle></CardHeader>
           <CardContent className="space-y-4">
             {synthAudioUrl ? (
-              <WaveformViewer url={synthAudioUrl} label="Gelombang Sintesis" />
+              <div className="space-y-2">
+                <WaveformViewer url={synthAudioUrl} label="Gelombang Sintesis" />
+                <audio controls src={synthAudioUrl} className="w-full rounded-lg border border-gray-300" />
+              </div>
             ) : (
               <p className="text-sm text-gray-500 italic">Belum ada hasil sintesis.</p>
             )}
+            <div className="flex gap-2 mt-2">
+              <Button variant="outline" onClick={handleSynthesize} disabled={!paramsAPI}>Synthesize</Button>
+            </div>
           </CardContent>
         </Card>
       </div>
 
       {/* Kontrol FM */}
       <Card className="bg-white border border-gray-200 shadow-md rounded-2xl hover:shadow-lg transition-all duration-300">
-        <CardHeader>
-          <CardTitle>Kontrol FM Synthesis</CardTitle>
-        </CardHeader>
+        <CardHeader><CardTitle>Kontrol FM Synthesis</CardTitle></CardHeader>
         <CardContent className="space-y-4">
-          <FmControls params={params} setParams={setParams} />
-
-          <div className="flex flex-wrap gap-3 mt-4">
-            <Button className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-6 py-2 rounded-lg shadow-sm" onClick={handleSynthesize}>
-              Synthesize
-            </Button>
-
-            <Button variant="outline" className="border-gray-300 text-gray-700 hover:bg-gray-100" onClick={handleEvaluate}>
-              Evaluate
-            </Button>
-
-            <Button variant="ghost" className="text-blue-700 hover:underline" onClick={handleSaveParams}>
-              Save Params
-            </Button>
-          </div>
+          {paramsAPI ? (
+            <FmControls
+              params={mapParams(paramsAPI)}
+              setParams={(updated) => {
+                if (!paramsAPI) return;
+                // pastikan semua field tetap number (fallback)
+                setParamsAPI({
+                  ...paramsAPI,
+                  carrier_frequency_fc: updated.carrierFreq ?? paramsAPI.carrier_frequency_fc,
+                  modulator_frequency_fm: updated.modFreq ?? paramsAPI.modulator_frequency_fm,
+                  modulation_index_I: updated.modIndex ?? paramsAPI.modulation_index_I,
+                  attack_rate: updated.attack ?? paramsAPI.attack_rate,
+                  decay_rate: updated.decay ?? paramsAPI.decay_rate,
+                  noise_level: updated.noiseLevel ?? paramsAPI.noise_level,
+                });
+              }}
+            />
+          ) : (
+            <p className="text-sm text-gray-500 italic">Belum ada parameter dari analisis.</p>
+          )}
         </CardContent>
       </Card>
-
-      {/* Evaluation Card */}
-      {similarity !== null && <EvaluationCard score={similarity} />}
+      <Card className="bg-white border border-gray-200 shadow-md rounded-2xl">
+        <CardHeader>
+          <CardTitle>Log Iterasi Sintesis</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <SynthesisLogTable logs={synthLog} />
+        </CardContent>
+      </Card>
     </div>
   );
 }
