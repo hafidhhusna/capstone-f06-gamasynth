@@ -40,11 +40,11 @@ export default function SynthesisLogTable({ log, onPlay }: Props) {
           <TableHead>Attack</TableHead>
           <TableHead>Decay</TableHead>
           <TableHead>Noise</TableHead>
-          <TableHead>Play</TableHead>
           <TableHead>Additional Partials</TableHead>
           <TableHead>Bandpass Bandwidth</TableHead>
           <TableHead>Secondary Modulator Ratio</TableHead>
           <TableHead>Detune Step</TableHead>
+          <TableHead>Play</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
