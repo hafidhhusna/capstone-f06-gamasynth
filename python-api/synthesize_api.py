@@ -151,11 +151,11 @@ async def synthesize(
     decay_rate: float = Form(...),
     noise_level: float = Form(...),
     duration: float = Form(7.0),
-    sampling_rate: int = Form(44100),
-    add_partials: int = Form(10),
-    bp_bw: float = Form(0.25),
-    secondary_mod_ratio: float = Form(0.25),
-    detune_step: float = Form(0.0015),
+    sampling_rate: int = Form(...),
+    add_partials: int = Form(...),
+    bp_bw: float = Form(...),
+    secondary_mod_ratio: float = Form(...),
+    detune_step: float = Form(...),
 ):
     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
         contents = await file.read()
