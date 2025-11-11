@@ -11,6 +11,10 @@ interface FMParamsFrontend {
   attack?: number;
   decay?: number;
   noiseLevel?: number;
+  add_partials?: number;
+  bp_bw?: number;
+  secondary_mod_ratio?: number;
+  detune_step?: number;
 }
 
 interface Props {
@@ -79,6 +83,10 @@ export default function FmControls({ params, setParams }: Props) {
       {control("Attack", "attack", 0, 10000, 0.01, 0.1)}
       {control("Decay", "decay", 0, 10000, 0.01, 0.5)}
       {control("Noise Level", "noiseLevel", 0, 20, 0.1, 10)}
+      {control("Additional Partials", "add_partials", 0, 20, 1, 5)}
+      {control("Bandpass Bandwidth", "bp_bw", 0.1, 100, 0.1, 1)}
+      {control("Secondary Modulator Ratio", "secondary_mod_ratio", 0, 10, 0.01, 2)}
+      {control("Detune Step", "detune_step", 0, 100, 0.1, 1)}
     </div>
   );
 }
