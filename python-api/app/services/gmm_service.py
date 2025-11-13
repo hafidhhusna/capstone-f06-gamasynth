@@ -1,4 +1,3 @@
-# app/services/gmm_service.py
 import os
 from pathlib import Path
 import pickle
@@ -51,12 +50,10 @@ class GMMDiag:
 
 # ---------------- model loader ----------------
 def _ensure_ext(name: str, ext: str = ".pkl") -> str:
-    # tambahkan ekstensi jika belum ada
     base = os.path.basename(name)
     return base if base.lower().endswith(ext) else base + ext
 
 def _find_model_path(model_name: str):
-    # cek beberapa kandidat path untuk model
     p = Path(model_name)
     if p.exists():
         return p
@@ -104,6 +101,16 @@ def load_model(model_name: str):
     if "stats" not in data:
         data["stats"] = {}
 
+    # jika per_frame_train disimpan sebagai list, ubah ke numpy array saat dipakai
+    stats = data.get("stats", {})
+    if "per_frame_train" in stats and not isinstance(stats["per_frame_train"], np.ndarray):
+        try:
+            stats["per_frame_train"] = np.array(stats["per_frame_train"], dtype=float)
+            data["stats"] = stats
+        except Exception:
+            # biarkan sebagai apa adanya jika gagal konversi
+            pass
+
     return data
 
 # ---------------- scaler adapter ----------------
@@ -127,7 +134,7 @@ def train_model_from_features(X: np.ndarray,
                               tol: float = 1e-4):
     # validasi input
     if X is None or not isinstance(X, np.ndarray) or X.ndim != 2:
-        raise ValueError("x harus numpy array 2d (n_samples, n_features)")
+        raise ValueError("X harus numpy array 2d (n_samples, n_features)")
 
     n_samples, n_features = X.shape
     k = int(n_components)
@@ -196,14 +203,16 @@ def train_model_from_features(X: np.ndarray,
     per_frame_train = gmm.score_samples(Xs)
     train_mean = float(np.mean(per_frame_train))
     train_std = float(np.std(per_frame_train))
-    threshold = float(np.percentile(per_frame_train, 5))  # contoh threshold: 5th percentile
+    threshold = train_mean - 1.5 * train_std
 
     stats = {
         "train_mean": train_mean,
         "train_std": train_std,
         "threshold": threshold,
         "n_samples": int(n_samples),
-        "n_features": int(n_features)
+        "n_features": int(n_features),
+        # simpan per_frame_train sebagai list agar serializable
+        "per_frame_train": per_frame_train.tolist()
     }
 
     scaler = {"mean": mean.tolist(), "std": std.tolist()}
@@ -269,9 +278,14 @@ def plot_histogram(model_name: str, mfcc: np.ndarray = None):
     data = load_model(model_name)
     gmm, scaler, stats = data["gmm"], data["scaler"], data["stats"]
 
-    per_frame_train = np.array(stats["per_frame_train"])
-    train_mean = stats["train_mean"]
-    threshold = stats["threshold"]
+    # safe-get per_frame_train
+    pft = stats.get("per_frame_train", None)
+    if pft is None:
+        raise RuntimeError("model tidak memiliki statistik 'per_frame_train' yang diperlukan untuk plotting. retrain model agar stats lengkap.")
+    per_frame_train = np.array(pft, dtype=float)
+
+    train_mean = stats.get("train_mean", None)
+    threshold = stats.get("threshold", None)
 
     arrs, labels = [per_frame_train], [f"train (n={len(per_frame_train)})"]
     if mfcc is not None:
@@ -283,8 +297,10 @@ def plot_histogram(model_name: str, mfcc: np.ndarray = None):
     plt.figure(figsize=(9, 6))
     for i, a in enumerate(arrs):
         plt.hist(a, bins=60, alpha=0.5, label=labels[i])
-    plt.axvline(train_mean, color="k", linestyle="--", linewidth=2)
-    plt.axvline(threshold, color="r", linestyle=":", linewidth=2)
+    if train_mean is not None:
+        plt.axvline(train_mean, color="k", linestyle="--", linewidth=2)
+    if threshold is not None:
+        plt.axvline(threshold, color="r", linestyle=":", linewidth=2)
     plt.title(f"gmm log-likelihoods ({model_name})")
     plt.xlabel("per-frame log-likelihood")
     plt.ylabel("count")
