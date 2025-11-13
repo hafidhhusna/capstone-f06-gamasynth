@@ -132,7 +132,7 @@ export default function Dashboard() {
       const formData = new FormData();
       formData.append("file", inputFile);
 
-      const res = await fetch("http://localhost:8080/mfcc/extract_mfcc/", {
+      const res = await fetch("https://gamasynth-api-production.up.railway.app/mfcc/extract_mfcc/", {
         method: "POST",
         body: formData,
       });
@@ -148,33 +148,53 @@ export default function Dashboard() {
   // ---------------------
   // GMM Evaluation
   // ---------------------
+// ---------------------
+// GMM Evaluation (pakai hasil synthesize)
+// ---------------------
   const handleEvaluateGMM = async () => {
-    if (!inputFile) return toast({ title: "Upload audio dulu!", variant: "destructive" });
-    if (!gmmModelName) return toast({ title: "Pilih model GMM dulu!", variant: "destructive" });
+    if (!synthUrlRef.current) 
+      return toast({ title: "Belum ada audio hasil synthesize!", variant: "destructive" });
+    if (!gmmModelName) 
+      return toast({ title: "Pilih model GMM dulu!", variant: "destructive" });
 
     setEvaluating(true);
-    toast({ title: "Evaluasi GMM...", description: "Harap tunggu..." });
+    toast({ title: "Evaluasi GMM...", description: "Menggunakan hasil synthesize." });
 
     try {
+      // Ambil blob dari URL hasil synthesize
+      const synthBlob = await fetch(synthUrlRef.current).then((r) => r.blob());
+
+      // Bungkus blob menjadi File agar bisa dikirim di FormData
+      const synthFile = new File([synthBlob], "synthesized.wav", { type: "audio/wav" });
+
       const formData = new FormData();
-      formData.append("test_file", inputFile);
+      formData.append("test_file", synthFile);
       formData.append("reference_model", gmmModelName);
 
-      const res = await fetch("http://localhost:8080/gmm/compare/", {
+      const res = await fetch("https://gamasynth-api-production.up.railway.app/gmm/compare/", {
         method: "POST",
         body: formData,
       });
+
       if (!res.ok) throw new Error(await res.text());
 
       const result = await res.json();
       setGmmResult(result);
-      toast({ title: "Evaluasi selesai!", description: `Similarity: ${result.percent_similarity_topk.toFixed(2)}%` });
+      toast({
+        title: "Evaluasi selesai!",
+        description: `Similarity: ${result.percent_similarity_topk.toFixed(2)}%`,
+      });
     } catch (err: any) {
-      toast({ title: "Gagal evaluasi GMM", description: err.message || String(err), variant: "destructive" });
+      toast({
+        title: "Gagal evaluasi GMM",
+        description: err.message || String(err),
+        variant: "destructive",
+      });
     } finally {
       setEvaluating(false);
     }
   };
+
 
   // ---------------------
   // FM Synthesis
@@ -189,7 +209,7 @@ export default function Dashboard() {
       if (inputFile) formData.append("file", inputFile);
       Object.entries(paramsAPI).forEach(([k, v]) => formData.append(k, String(v)));
 
-      const res = await fetch("http://localhost:8080/synthesize/synthesize", { method: "POST", body: formData });
+      const res = await fetch("https://gamasynth-api-production.up.railway.app/synthesize/synthesize", { method: "POST", body: formData });
       if (!res.ok) throw new Error(await res.text());
 
       const blob = await res.blob();
