@@ -1,118 +1,93 @@
-# app/routes/gmm.py
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.encoders import jsonable_encoder
 from app.services import gmm_service, mfcc_service
-import io, tempfile, os, traceback, joblib, uuid
+import tempfile, os, joblib, uuid, logging
 import numpy as np
 from pathlib import Path
 
 router = APIRouter()
 
+# direktori model
 MODEL_DIR = Path(os.environ.get("GMM_MODEL_DIR", "models"))
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
-# ---------------- helper json ----------------
+# logger minimal
+logger = logging.getLogger("app.gmm")
+if not logger.handlers:
+    logging.basicConfig(level=logging.INFO)
+
+# ---------------- helpers ----------------
 def make_json_safe(obj):
-    # rekursif: ubah obj menjadi tipe python bawaan yang json-serializable
+    """Konversi objek menjadi tipe yang json-serializable (sederhana)."""
     if obj is None or isinstance(obj, (bool, int, float, str)):
         return obj
-
     if isinstance(obj, np.ndarray):
         return obj.tolist()
-    if isinstance(obj, (np.integer,)):
-        return int(obj)
-    if isinstance(obj, (np.floating,)):
-        return float(obj)
-    if isinstance(obj, (np.bool_,)):
-        return bool(obj)
-
-    if isinstance(obj, (bytes, bytearray)):
-        try:
-            return obj.decode("utf-8")
-        except Exception:
-            return list(obj)
-
     if isinstance(obj, dict):
         return {str(k): make_json_safe(v) for k, v in obj.items()}
-
     if isinstance(obj, (list, tuple, set)):
         return [make_json_safe(x) for x in obj]
-
-    if hasattr(obj, "__dict__"):
-        try:
-            return make_json_safe(vars(obj))
-        except Exception:
-            pass
-
     try:
         return str(obj)
     except Exception:
         return repr(obj)
 
 
-def inspect_problematic(result):
-    # cek item yang bukan tipe sederhana, untuk debugging
-    problems = []
-    if isinstance(result, dict):
-        for k, v in result.items():
-            t = type(v).__name__
-            if not isinstance(v, (type(None), bool, int, float, str, list, dict)):
-                problems.append((k, t, repr(v)[:200]))
-    return problems
+def _sanitize_model_name(name: str) -> str:
+    """Sederhana: ambil basename dan pastikan .pkl di akhir."""
+    if not name:
+        return name
+    base = os.path.basename(name)
+    return base if base.lower().endswith(".pkl") else base + ".pkl"
 
 
-# ---------------- endpoints: compare + plot ----------------
+# ---------------- endpoints ----------------
 @router.post("/compare/")
 async def compare_gmm(reference_model: str = Form(...),
                       test_file: UploadFile = File(...),
                       topk: float = Form(0.2)):
-    # endpoint: bandingkan file uji dengan model gmm referensi
     tmp_path = None
     try:
-        # baca file upload dan simpan sementara
+        # simpan sementara file upload
         b = await test_file.read()
         with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
             tmp.write(b)
             tmp_path = tmp.name
 
-        # ekstrak mfcc dari file sementara
+        # ekstrak mfcc
         mfcc = mfcc_service.extract_mfcc_from_file(tmp_path)
+        if mfcc is None or not isinstance(mfcc, np.ndarray) or mfcc.ndim != 2:
+            raise HTTPException(status_code=400, detail="gagal ekstrak mfcc dari file uji")
 
-        # panggil service gmm
+        # bandingkan
         result = gmm_service.compare_with_model(reference_model, mfcc, topk=topk)
 
-        # hapus per_frame jika ada agar hasil ringan
-        if "per_frame" in result:
-            del result["per_frame"]
+        # jangan kirim per-frame besar
+        result.pop("per_frame", None)
 
-        # tambahkan metadata dasar
-        result.update({
-            "test_file": test_file.filename
-        })
-
-        # konversi ke json-safe
+        result.update({"test_file": test_file.filename})
         safe = make_json_safe(result)
-        safe = jsonable_encoder(safe)
+        return JSONResponse(content=jsonable_encoder(safe))
 
-        return JSONResponse(content=safe)
-
+    except HTTPException:
+        raise
+    except FileNotFoundError as e:
+        # model tidak ditemukan
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
-        tb = traceback.format_exc()
-        # kirim detail error untuk debugging lokal
-        raise HTTPException(status_code=500, detail={"error": str(e), "trace": tb})
+        logger.exception("compare_gmm error")
+        raise HTTPException(status_code=500, detail={"error": "internal server error", "msg": str(e)})
     finally:
-        # hapus file sementara
-        try:
-            if tmp_path and os.path.exists(tmp_path):
+        if tmp_path and os.path.exists(tmp_path):
+            try:
                 os.remove(tmp_path)
-        except Exception:
-            pass
+            except Exception:
+                pass
 
 
 @router.post("/plot_histogram/")
 async def plot_gmm_histogram(reference_model: str = Form(...), test_file: UploadFile = File(None)):
-    # buat plot histogram dari hasil gmm (kembalikan image/png)
     tmp_path = None
     try:
         mfcc = None
@@ -126,51 +101,50 @@ async def plot_gmm_histogram(reference_model: str = Form(...), test_file: Upload
         buf = gmm_service.plot_histogram(reference_model, mfcc)
         return StreamingResponse(buf, media_type="image/png")
 
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
-        tb = traceback.format_exc()
-        raise HTTPException(status_code=500, detail={"error": str(e), "trace": tb})
+        logger.exception("plot_histogram error")
+        raise HTTPException(status_code=500, detail={"error": "internal server error", "msg": str(e)})
     finally:
-        try:
-            if tmp_path and os.path.exists(tmp_path):
+        if tmp_path and os.path.exists(tmp_path):
+            try:
                 os.remove(tmp_path)
-        except Exception:
-            pass
+            except Exception:
+                pass
 
 
-# ---------------- endpoint: retrain_gmm ----------------
 @router.post("/retrain_gmm/")
 async def retrain_gmm(file: UploadFile = File(...),
                       model_name: str = Form(None),
                       n_components: int = Form(8)):
     tmp_ref = None
     try:
-        # simpan sementara file referensi
+        # simpan file referensi sementara
         b = await file.read()
         with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
             tmp.write(b)
             tmp_ref = tmp.name
 
-        # ekstrak mfcc dari file referensi
         X = mfcc_service.extract_mfcc_from_file(tmp_ref)
         if X is None or not isinstance(X, np.ndarray) or X.ndim != 2:
-            raise HTTPException(status_code=400, detail="gagal ekstrak mfcc: pastikan file audio valid (.wav)")
+            raise HTTPException(status_code=400, detail="gagal ekstrak mfcc dari file referensi")
 
-        # panggil service untuk training (semua logic EM ada di service)
-        model_obj = gmm_service.train_model_from_features(X, n_components=n_components)
+        if X.shape[0] < max(2, int(n_components)):
+            raise HTTPException(status_code=400, detail=f"audio terlalu pendek untuk n_components={n_components}")
 
-        # tentukan nama file model (normalisasi ekstensi)
+        # training
+        model_obj = gmm_service.train_model_from_features(X, n_components)
+
+        # simpan model sederhana (langsung)
         if not model_name:
             model_name = f"gmm_{uuid.uuid4().hex}.pkl"
         else:
-            if not model_name.lower().endswith(".pkl"):
-                model_name = model_name + ".pkl"
+            model_name = _sanitize_model_name(model_name)
 
         model_path = MODEL_DIR / model_name
-
-        # simpan model dengan joblib (tanpa mmap_mode)
         joblib.dump(model_obj, model_path, compress=3)
 
-        # balikan ringkasan hasil
         out = {
             "status": "ok",
             "model_name": model_name,
@@ -183,17 +157,16 @@ async def retrain_gmm(file: UploadFile = File(...),
     except HTTPException:
         raise
     except Exception as e:
-        tb = traceback.format_exc()
-        raise HTTPException(status_code=500, detail={"error": str(e), "trace": tb})
+        logger.exception("retrain_gmm error")
+        raise HTTPException(status_code=500, detail={"error": "internal server error", "msg": str(e)})
     finally:
-        try:
-            if tmp_ref and os.path.exists(tmp_ref):
+        if tmp_ref and os.path.exists(tmp_ref):
+            try:
                 os.remove(tmp_ref)
-        except Exception:
-            pass
+            except Exception:
+                pass
 
 
-# ---------------- endpoint: train_and_compare ----------------
 @router.post("/train_and_compare/")
 async def train_and_compare(reference_file: UploadFile = File(...),
                             test_file: UploadFile = File(...),
@@ -203,69 +176,55 @@ async def train_and_compare(reference_file: UploadFile = File(...),
     tmp_ref = None
     tmp_test = None
     try:
-        # simpan reference sementara
+        # simpan reference
         b_ref = await reference_file.read()
         with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as t:
             t.write(b_ref)
             tmp_ref = t.name
 
-        # simpan test sementara
+        # simpan test
         b_test = await test_file.read()
         with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as t2:
             t2.write(b_test)
             tmp_test = t2.name
 
-        # ekstrak mfcc reference untuk training
+        # ekstrak
         X_ref = mfcc_service.extract_mfcc_from_file(tmp_ref)
-        if X_ref is None or not isinstance(X_ref, np.ndarray) or X_ref.ndim != 2:
-            raise HTTPException(status_code=400, detail="gagal ekstrak mfcc dari reference file")
-
-        # ekstrak mfcc test untuk perbandingan (validasi awal)
         X_test = mfcc_service.extract_mfcc_from_file(tmp_test)
-        if X_test is None or not isinstance(X_test, np.ndarray) or X_test.ndim != 2:
-            raise HTTPException(status_code=400, detail="gagal ekstrak mfcc dari test file")
+        if X_ref is None or X_test is None:
+            raise HTTPException(status_code=400, detail="gagal ekstrak mfcc dari salah satu file")
 
-        # train model via service
-        model_obj = gmm_service.train_model_from_features(X_ref, n_components=n_components)
+        if X_ref.shape[0] < max(2, int(n_components)):
+            raise HTTPException(status_code=400, detail=f"reference audio terlalu pendek untuk n_components={n_components}")
 
-        # simpan model
+        # train (synchronous)
+        model_obj = gmm_service.train_model_from_features(X_ref, n_components)
+
+        # simpan model sederhana
         if not model_name:
             model_name = f"gmm_{uuid.uuid4().hex}.pkl"
         else:
-            if not model_name.lower().endswith(".pkl"):
-                model_name = model_name + ".pkl"
+            model_name = _sanitize_model_name(model_name)
         model_path = MODEL_DIR / model_name
         joblib.dump(model_obj, model_path, compress=3)
 
-        # transform test pake scaler dari model (service adapter)
+        # score test
         scaler = model_obj["scaler"]
         Xs_test = gmm_service.transform_with_scaler(scaler, X_test)
-
-        # scoring
         gmm = model_obj["gmm"]
         stats = model_obj["stats"]
         per_frame_test = gmm.score_samples(Xs_test)
-        avg_mean = float(np.mean(per_frame_test))
-        avg_topk = float(np.mean(np.sort(per_frame_test)[-max(1, int(len(per_frame_test)*topk)):]))
 
-        # ambil statistik training
+        avg_mean = float(np.mean(per_frame_test))
+        avg_topk = float(np.mean(np.sort(per_frame_test)[-max(1, int(len(per_frame_test) * topk)):]))
+
         train_mean = float(stats.get("train_mean", float("nan")))
         train_std = float(stats.get("train_std", float("nan")))
         threshold = float(stats.get("threshold", float("nan")))
 
-        # compute percent/z
-        def _z_to_percent(a, m, s):
-            if s <= 0 or np.isnan(s):
-                return (100.0 if a >= m else 0.0), 0.0
-            z = (a - m) / s
-            from scipy.stats import norm
-            p = float(norm.cdf(z))
-            return 100.0 * p, float(z)
+        p_mean, z_mean = gmm_service.z_to_percent_normcdf(avg_mean, train_mean, train_std)
+        p_topk, z_topk = gmm_service.z_to_percent_normcdf(avg_topk, train_mean, train_std)
 
-        p_mean, z_mean = _z_to_percent(avg_mean, train_mean, train_std)
-        p_topk, z_topk = _z_to_percent(avg_topk, train_mean, train_std)
-
-        # hasil ringkas
         result = {
             "model_name": model_name,
             "model_path": str(model_path),
@@ -296,14 +255,16 @@ async def train_and_compare(reference_file: UploadFile = File(...),
     except HTTPException:
         raise
     except Exception as e:
-        tb = traceback.format_exc()
-        raise HTTPException(status_code=500, detail={"error": str(e), "trace": tb})
+        logger.exception("train_and_compare error")
+        raise HTTPException(status_code=500, detail={"error": "internal server error", "msg": str(e)})
     finally:
-        # hapus file sementara
-        try:
-            if tmp_ref and os.path.exists(tmp_ref):
+        if tmp_ref and os.path.exists(tmp_ref):
+            try:
                 os.remove(tmp_ref)
-            if tmp_test and os.path.exists(tmp_test):
+            except Exception:
+                pass
+        if tmp_test and os.path.exists(tmp_test):
+            try:
                 os.remove(tmp_test)
-        except Exception:
-            pass
+            except Exception:
+                pass
