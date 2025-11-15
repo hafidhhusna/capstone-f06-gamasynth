@@ -3,7 +3,7 @@ import FormData from "form-data";
 import fetch from "node-fetch";
 import mqtt from "mqtt";
 
-export const config = { api: { bodyParser: false } };
+// export const config = { api: { bodyParser: false } };
 
 export async function POST(req: NextRequest) {
   try {
@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
     const formDataPython = new FormData();
     formDataPython.append("file", buffer, { filename: file.name, contentType: file.type });
 
-    const fastapiRes = await fetch("http://localhost:8080/synthesize/analyze", {
+    const fastapiRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/synthesize/analyze`, {
       method: "POST",
       body: formDataPython as any,
     });
@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
     const params = await fastapiRes.json();
 
     // --- Kirim ke STM32 via MQTT ---
-    const broker = "mqtt://wff11500.ala.dedicated.aws.emqxcloud.com:1883";
+    const broker = process.env.MQTT_BROKER!;
     const topic = "stm32/upload";
 
     const client = mqtt.connect(broker, {

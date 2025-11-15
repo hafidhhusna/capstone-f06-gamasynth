@@ -11,8 +11,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from joblib import load as joblib_load
 
-# direktori model
-MODEL_DIR = Path(os.environ.get("GMM_MODEL_DIR", "models"))
+MODEL_DIR = Path(os.environ.get("GMM_MODEL_DIR", "app/models"))
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
 # ---------------- gmm helper ----------------

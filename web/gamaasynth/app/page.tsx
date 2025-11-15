@@ -4,87 +4,93 @@ import { useEffect, useState, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import SynthesisLogTable, { SynthesisLogEntry } from "@/components/SynthesisLogTable";
 
 import AudioUploader from "@/components/AudioUploader";
 import WaveformViewer from "@/components/WaveFormViewer";
+// [+] DIKEMBALIKAN: Komponen untuk menampilkan parameter
 import FmControls from "@/components/FmControls";
+// [=] TETAP: Komponen perekam live
+import AudioRecorder from "@/components/AudioRecorder";
 
 // ---------------------
 // Type Definitions
 // ---------------------
+
+// [+] DIKEMBALIKAN: Tipe untuk handleAnalyze
 type FMParamsFastAPI = {
   carrier_frequency_fc: number;
   modulator_frequency_fm: number;
   modulation_index_I: number;
-  duration: number;
-  sampling_rate: number;
-  attack_rate: number;
-  decay_rate: number;
-  noise_level: number;
-  add_partials: number;
-  bp_bw: number;
-  secondary_mod_ratio: number;
-  detune_step: number;
+  // Anda bisa uncomment sisanya jika API Anda mengembalikannya
+  // duration: number;
+  // sampling_rate: number;
+  // attack_rate: number;
+  // decay_rate: number;
+  // noise_level: number;
+  // add_partials: number;
+  // bp_bw: number;
+  // secondary_mod_ratio: number;
+  // detune_step: number;
 };
 
+// [+] DIKEMBALIKAN: Tipe untuk FmControls
 type FMParamsFrontend = {
   carrierFreq: number;
   modFreq: number;
   modIndex: number;
-  attack: number;
-  decay: number;
-  noiseLevel: number;
-  add_partials: number;
-  bp_bw: number;
-  secondary_mod_ratio: number;
-  detune_step: number;
+  // attack: number;
+  // decay: number;
+  // noiseLevel: number;
+  // add_partials: number;
+  // bp_bw: number;
+  // secondary_mod_ratio: number;
+  // detune_step: number;
 };
 
 export default function Dashboard() {
   const { toast } = useToast();
 
+  // --- State untuk Input (File Referensi) ---
   const [inputFile, setInputFile] = useState<File | null>(null);
   const [inputAudioUrl, setInputAudioUrl] = useState<string | null>(null);
 
-  const [paramsAPI, setParamsAPI] = useState<FMParamsFastAPI | null>(null);
-  const [synthLog, setSynthLog] = useState<SynthesisLogEntry[]>([]);
+  // --- State untuk Hasil Rekaman Live (STM32) ---
+  const [liveRecordingFile, setLiveRecordingFile] = useState<File | null>(null);
+  const [liveRecordingUrl, setLiveRecordingUrl] = useState<string | null>(null);
 
+  // [+] DIKEMBALIKAN: State untuk hasil analisis FM
+  const [paramsAPI, setParamsAPI] = useState<FMParamsFastAPI | null>(null);
+
+  // --- State untuk GMM (Sama) ---
   const [mfccResult, setMfccResult] = useState<number[][] | null>(null);
   const [gmmResult, setGmmResult] = useState<any | null>(null);
-  const [gmmModelName, setGmmModelName] = useState<string>(""); // select model
-
+  const [gmmModelName, setGmmModelName] = useState<string>("");
   const [evaluating, setEvaluating] = useState(false);
 
-  const synthUrlRef = useRef<string | null>(null);
-  const [synthReady, setSynthReady] = useState(false);
-
-  // ---------------------
-  // Helper
-  // ---------------------
+  // [+] DIKEMBALIKAN: Helper untuk map 'paramsAPI' ke 'FmControls'
   const mapParams = (p: FMParamsFastAPI): FMParamsFrontend => ({
     carrierFreq: p.carrier_frequency_fc ?? 0,
     modFreq: p.modulator_frequency_fm ?? 0,
     modIndex: p.modulation_index_I ?? 0,
-    attack: p.attack_rate ?? 0,
-    decay: p.decay_rate ?? 0,
-    noiseLevel: p.noise_level ?? 0,
-    add_partials: p.add_partials ?? 0,
-    bp_bw: p.bp_bw ?? 0,
-    secondary_mod_ratio: p.secondary_mod_ratio ?? 0,
-    detune_step: p.detune_step ?? 0,
+    // attack: p.attack_rate ?? 0,
+    // decay: p.decay_rate ?? 0,
+    // noiseLevel: p.noise_level ?? 0,
+    // add_partials: p.add_partials ?? 0,
+    // bp_bw: p.bp_bw ?? 0,
+    // secondary_mod_ratio: p.secondary_mod_ratio ?? 0,
+    // detune_step: p.detune_step ?? 0,
   });
 
   // Cleanup URL saat unmount
   useEffect(() => {
     return () => {
       if (inputAudioUrl) URL.revokeObjectURL(inputAudioUrl);
-      if (synthUrlRef.current) URL.revokeObjectURL(synthUrlRef.current);
+      if (liveRecordingUrl) URL.revokeObjectURL(liveRecordingUrl);
     };
-  }, [inputAudioUrl]);
+  }, [inputAudioUrl, liveRecordingUrl]);
 
   // ---------------------
-  // Upload Handler
+  // Upload Handler (Referensi)
   // ---------------------
   const handleUpload = (file: File) => {
     if (inputAudioUrl) URL.revokeObjectURL(inputAudioUrl);
@@ -92,17 +98,24 @@ export default function Dashboard() {
     setInputFile(file);
 
     toast({
-      title: "File berhasil diunggah",
+      title: "File referensi diunggah",
       description: `${file.name} siap untuk dianalisis.`,
     });
   };
 
   // ---------------------
-  // Analyze FM Params
+  // [+] DIKEMBALIKAN: Analyze FM Params
   // ---------------------
   const handleAnalyze = async () => {
-    if (!inputFile) return toast({ title: "Upload audio dulu!", variant: "destructive" });
-    toast({ title: "Analisis audio...", description: "Mengambil parameter dari FastAPI" });
+    if (!inputFile)
+      return toast({
+        title: "Upload audio referensi dulu!",
+        variant: "destructive",
+      });
+    toast({
+      title: "Analisis audio...",
+      description: "Mengambil parameter dari FastAPI",
+    });
 
     try {
       const formData = new FormData();
@@ -114,113 +127,119 @@ export default function Dashboard() {
       });
 
       const result = await res.json();
-      if (!res.ok || !result.params) throw new Error(result.error || "Gagal analisis");
+      if (!res.ok || !result.params)
+        throw new Error(result.error || "Gagal analisis");
 
       setParamsAPI(result.params);
-      toast({ title: "Parameter diterima!", description: "Siap untuk sintesis." });
+      toast({ title: "Parameter diterima!", description: "Siap ditampilkan." });
     } catch (err: any) {
-      toast({ title: "Gagal analisis", description: err.message || String(err), variant: "destructive" });
+      toast({
+        title: "Gagal analisis",
+        description: err.message || String(err),
+        variant: "destructive",
+      });
     }
   };
 
   // ---------------------
-  // MFCC Extraction
+  // MFCC Extraction (Referensi)
   // ---------------------
   const handleMFCC = async () => {
-    if (!inputFile) return toast({ title: "Upload audio dulu!", variant: "destructive" });
+    if (!inputFile)
+      return toast({
+        title: "Upload audio referensi dulu!",
+        variant: "destructive",
+      });
     try {
       const formData = new FormData();
       formData.append("file", inputFile);
 
-      const res = await fetch("http://localhost:8080/mfcc/extract_mfcc/", {
-        method: "POST",
-        body: formData,
-      });
+      const res = await fetch(
+        "https://gamasynth-api-production.up.railway.app/mfcc/extract_mfcc/",
+        {
+          method: "POST",
+          body: formData,
+        }
+      );
       if (!res.ok) throw new Error(await res.text());
       const result = await res.json();
       setMfccResult(result.mfcc);
-      toast({ title: "MFCC berhasil diekstrak!" });
+      toast({ title: "MFCC referensi berhasil diekstrak!" });
     } catch (err: any) {
-      toast({ title: "Gagal ekstrak MFCC", description: err.message || String(err), variant: "destructive" });
+      toast({
+        title: "Gagal ekstrak MFCC",
+        description: err.message || String(err),
+        variant: "destructive",
+      });
     }
   };
 
   // ---------------------
-  // GMM Evaluation
+  // [=] TETAP: Handler untuk hasil rekaman live
+  // ---------------------
+  const handleRecordingComplete = (audioFile: File) => {
+    if (liveRecordingUrl) {
+      URL.revokeObjectURL(liveRecordingUrl);
+    }
+    const newUrl = URL.createObjectURL(audioFile);
+    setLiveRecordingFile(audioFile);
+    setLiveRecordingUrl(newUrl);
+
+    toast({
+      title: "Rekaman Selesai",
+      description: "Audio dari soundcard (STM32) siap dievaluasi.",
+    });
+  };
+
+  // ---------------------
+  // [=] TETAP: GMM Evaluation (menggunakan audio live)
   // ---------------------
   const handleEvaluateGMM = async () => {
-    if (!inputFile) return toast({ title: "Upload audio dulu!", variant: "destructive" });
-    if (!gmmModelName) return toast({ title: "Pilih model GMM dulu!", variant: "destructive" });
+    if (!liveRecordingFile)
+      return toast({
+        title: "Belum ada audio rekaman live!",
+        variant: "destructive",
+      });
+    if (!gmmModelName)
+      return toast({ title: "Pilih model GMM dulu!", variant: "destructive" });
 
     setEvaluating(true);
-    toast({ title: "Evaluasi GMM...", description: "Harap tunggu..." });
+    toast({
+      title: "Evaluasi GMM...",
+      description: "Menggunakan audio hasil rekaman live.",
+    });
 
     try {
       const formData = new FormData();
-      formData.append("test_file", inputFile);
+      formData.append("test_file", liveRecordingFile);
       formData.append("reference_model", gmmModelName);
 
-      const res = await fetch("http://localhost:8080/gmm/compare/", {
-        method: "POST",
-        body: formData,
-      });
+      const res = await fetch(
+        "https://gamasynth-api-production.up.railway.app/gmm/compare/",
+        {
+          method: "POST",
+          body: formData,
+        }
+      );
+
       if (!res.ok) throw new Error(await res.text());
 
       const result = await res.json();
       setGmmResult(result);
-      toast({ title: "Evaluasi selesai!", description: `Similarity: ${result.percent_similarity_topk.toFixed(2)}%` });
+      toast({
+        title: "Evaluasi selesai!",
+        description: `Similarity: ${result.percent_similarity_topk.toFixed(
+          2
+        )}%`,
+      });
     } catch (err: any) {
-      toast({ title: "Gagal evaluasi GMM", description: err.message || String(err), variant: "destructive" });
+      toast({
+        title: "Gagal evaluasi GMM",
+        description: err.message || String(err),
+        variant: "destructive",
+      });
     } finally {
       setEvaluating(false);
-    }
-  };
-
-  // ---------------------
-  // FM Synthesis
-  // ---------------------
-  const handleSynthesize = async () => {
-    if (!paramsAPI) return toast({ title: "Belum ada parameter", variant: "destructive" });
-
-    toast({ title: "Sintesis dimulai...", description: "Harap tunggu beberapa saat." });
-
-    try {
-      const formData = new FormData();
-      if (inputFile) formData.append("file", inputFile);
-      Object.entries(paramsAPI).forEach(([k, v]) => formData.append(k, String(v)));
-
-      const res = await fetch("http://localhost:8080/synthesize/synthesize", { method: "POST", body: formData });
-      if (!res.ok) throw new Error(await res.text());
-
-      const blob = await res.blob();
-
-      if (synthUrlRef.current) URL.revokeObjectURL(synthUrlRef.current);
-      const url = URL.createObjectURL(blob);
-      synthUrlRef.current = url;
-      setSynthReady(true);
-
-      setSynthLog((prev) => [
-        ...prev,
-        {
-          id: prev.length + 1,
-          audioUrl: url,
-          fileName: inputFile?.name ?? "unknown.wav",
-          fc: paramsAPI.carrier_frequency_fc ?? 0,
-          fm: paramsAPI.modulator_frequency_fm ?? 0,
-          index: paramsAPI.modulation_index_I ?? 0,
-          attack: paramsAPI.attack_rate ?? 0,
-          decay: paramsAPI.decay_rate ?? 0,
-          noise: paramsAPI.noise_level ?? 0,
-          add_partials: paramsAPI.add_partials ?? 0,
-          bp_bw: paramsAPI.bp_bw ?? 0,
-          secondary_mod_ratio: paramsAPI.secondary_mod_ratio ?? 0,
-          detune_step: paramsAPI.detune_step ?? 0,
-        },
-      ]);
-
-      toast({ title: "Sintesis berhasil!", description: "Audio siap diputar." });
-    } catch (err: any) {
-      toast({ title: "Gagal sintesis", description: err.message || String(err), variant: "destructive" });
     }
   };
 
@@ -230,60 +249,100 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-100 text-gray-800 p-10 space-y-10">
       <header className="space-y-2">
-        <h1 className="text-4xl font-semibold tracking-tight text-gray-900">Capstone F-06 Gamasynth Dashboard</h1>
-        <p className="text-gray-500">Eksperimen sintesis suara gamelan menggunakan parameter FM.</p>
+        <h1 className="text-4xl font-semibold tracking-tight text-gray-900">
+          Capstone F-06 Gamasynth Dashboard
+        </h1>
+        <p className="text-gray-500">
+          Analisis audio referensi dan evaluasi audio live (STM32).
+        </p>
       </header>
 
       <div className="grid md:grid-cols-2 gap-10">
-        {/* Input Audio */}
+        {/* Kolom 1: Input Audio Referensi */}
         <Card className="bg-white border border-gray-200 shadow-md rounded-2xl hover:shadow-lg transition-all duration-300">
-          <CardHeader><CardTitle>Input Suara Gamelan</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle>Input Suara Gamelan (Referensi)</CardTitle>
+          </CardHeader>
           <CardContent className="space-y-4">
             <AudioUploader onUpload={handleUpload} />
             <WaveformViewer file={inputFile} label="Gelombang Asli" />
-            {inputAudioUrl && <audio controls src={inputAudioUrl} className="w-full rounded-lg border border-gray-300" />}
+            {inputAudioUrl && (
+              <audio
+                controls
+                src={inputAudioUrl}
+                className="w-full rounded-lg border border-gray-300"
+              />
+            )}
             <div className="flex gap-2 mt-2">
-              <Button variant="outline" onClick={handleAnalyze} disabled={!inputFile}>Analyze FM</Button>
-              <Button variant="outline" onClick={handleMFCC} disabled={!inputFile}>Extract MFCC</Button>
+              {/* [+] DIKEMBALIKAN: Tombol Analyze FM */}
+              <Button
+                variant="outline"
+                onClick={handleAnalyze}
+                disabled={!inputFile}
+              >
+                Analyze FM
+              </Button>
+              {/* <Button
+                variant="outline"
+                onClick={handleMFCC}
+                disabled={!inputFile}
+              >
+                Extract MFCC (Ref)
+              </Button> */}
             </div>
           </CardContent>
         </Card>
 
-        {/* Hasil Sintesis & GMM */}
+        {/* Kolom 2: Live Capture & GMM */}
         <Card className="bg-white border border-gray-200 shadow-md rounded-2xl hover:shadow-lg transition-all duration-300">
-          <CardHeader><CardTitle>Hasil Sintesis & GMM</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle>Live Capture (STM32) & GMM</CardTitle>
+          </CardHeader>
           <CardContent className="space-y-4">
-            {/* FM Synthesis */}
-            {synthReady && synthUrlRef.current && (
-              <div className="space-y-2">
-                <WaveformViewer url={synthUrlRef.current} label="Gelombang Sintesis" />
-                <audio controls src={synthUrlRef.current} className="w-full rounded-lg border border-gray-300" />
-                <Button variant="secondary" onClick={() => {
-                  if (synthUrlRef.current) {
-                    const a = document.createElement("a");
-                    a.href = synthUrlRef.current;
-                    const baseName = inputFile?.name.split(".")[0] ?? "audio";
-                    a.download = `${baseName}_synthesized.wav`;
-                    a.click();
-                  }
-                }}>Download Audio</Button>
+            {/* [=] TETAP: Komponen Perekam Live */}
+            <AudioRecorder onRecordingComplete={handleRecordingComplete} />
+
+            {/* [=] TETAP: Menampilkan hasil rekaman */}
+            {liveRecordingUrl && (
+              <div className="space-y-2 pt-4 border-t">
+                <h4 className="text-md font-medium">Hasil Rekaman Live:</h4>
+                <WaveformViewer
+                  url={liveRecordingUrl}
+                  label="Gelombang Rekaman"
+                />
+                <audio
+                  controls
+                  src={liveRecordingUrl}
+                  className="w-full rounded-lg border border-gray-300"
+                />
               </div>
             )}
 
-            <div className="flex gap-2 mt-2">
-              <Button variant="outline" onClick={handleSynthesize} disabled={!paramsAPI}>Synthesize FM</Button>
-            </div>
-
-            {/* GMM Evaluation */}
-            <div className="space-y-2 mt-4">
-              <label className="block text-sm font-medium text-gray-700">Pilih model GMM:</label>
-              <input type="text" className="border rounded p-1 w-full" placeholder="contoh: gamelan_model_01" value={gmmModelName} onChange={(e) => setGmmModelName(e.target.value)} />
-              <Button variant="outline" onClick={handleEvaluateGMM} disabled={!inputFile || !gmmModelName || evaluating}>
-                {evaluating ? "Evaluating..." : "Evaluate GMM"}
+            {/* [=] TETAP: GMM Evaluation */}
+            <div className="space-y-2 mt-4 pt-4 border-t">
+              <label className="block text-sm font-medium text-gray-700">
+                Pilih model GMM:
+              </label>
+              <input
+                type="text"
+                className="border rounded p-1 w-full"
+                placeholder="contoh: gamelan_model_01"
+                value={gmmModelName}
+                onChange={(e) => setGmmModelName(e.target.value)}
+              />
+              <Button
+                variant="outline"
+                onClick={handleEvaluateGMM}
+                disabled={!liveRecordingFile || !gmmModelName || evaluating}
+              >
+                {evaluating ? "Evaluating..." : "Evaluate GMM (Live Audio)"}
               </Button>
               {gmmResult && (
                 <div className="text-sm text-gray-700 mt-2">
-                  <p>Similarity Top-k: {gmmResult.percent_similarity_topk.toFixed(2)}%</p>
+                  <p>
+                    Similarity Top-k:{" "}
+                    {gmmResult.percent_similarity_topk.toFixed(2)}%
+                  </p>
                   <p>Frames: {gmmResult.n_frames}</p>
                   <p>File: {gmmResult.test_file}</p>
                 </div>
@@ -293,38 +352,41 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      {/* Kontrol FM */}
+      {/* [+] DIKEMBALIKAN: Card untuk Kontrol FM (Hasil Analisis) */}
       <Card className="bg-white border border-gray-200 shadow-md rounded-2xl hover:shadow-lg transition-all duration-300">
-        <CardHeader><CardTitle>Kontrol FM Synthesis</CardTitle></CardHeader>
+        <CardHeader>
+          <CardTitle>Kontrol FM (Hasil Analisis)</CardTitle>
+        </CardHeader>
         <CardContent className="space-y-4">
           {paramsAPI ? (
-            <FmControls params={mapParams(paramsAPI)} setParams={(updated) => {
-              if (!paramsAPI) return;
-              setParamsAPI({
-                ...paramsAPI,
-                carrier_frequency_fc: updated.carrierFreq ?? paramsAPI.carrier_frequency_fc,
-                modulator_frequency_fm: updated.modFreq ?? paramsAPI.modulator_frequency_fm,
-                modulation_index_I: updated.modIndex ?? paramsAPI.modulation_index_I,
-                attack_rate: updated.attack ?? paramsAPI.attack_rate,
-                decay_rate: updated.decay ?? paramsAPI.decay_rate,
-                noise_level: updated.noiseLevel ?? paramsAPI.noise_level,
-                add_partials: updated.add_partials ?? paramsAPI.add_partials,
-                bp_bw: updated.bp_bw ?? paramsAPI.bp_bw,
-                secondary_mod_ratio: updated.secondary_mod_ratio ?? paramsAPI.secondary_mod_ratio,
-                detune_step: updated.detune_step ?? paramsAPI.detune_step,
-              });
-            }} />
-          ) : <p className="text-sm text-gray-500 italic">Belum ada parameter dari analisis.</p>}
+            <FmControls
+              params={mapParams(paramsAPI)}
+              setParams={(updated) => {
+                // Logika ini mengizinkan Anda mengubah state 'paramsAPI'
+                // meskipun tidak ada tombol "Synthesize".
+                // Bermanfaat jika Anda ingin mencatatnya secara manual.
+                if (!paramsAPI) return;
+                setParamsAPI({
+                  ...paramsAPI,
+                  carrier_frequency_fc:
+                    updated.carrierFreq ?? paramsAPI.carrier_frequency_fc,
+                  modulator_frequency_fm:
+                    updated.modFreq ?? paramsAPI.modulator_frequency_fm,
+                  modulation_index_I:
+                    updated.modIndex ?? paramsAPI.modulation_index_I,
+                  // ... (tambahkan parameter lain jika Anda mengaktifkannya)
+                });
+              }}
+            />
+          ) : (
+            <p className="text-sm text-gray-500 italic">
+              Belum ada parameter. Klik Analyze FM pada file referensi.
+            </p>
+          )}
         </CardContent>
       </Card>
 
-      {/* Log */}
-      <Card className="bg-white border border-gray-200 shadow-md rounded-2xl">
-        <CardHeader><CardTitle>Log Iterasi Sintesis</CardTitle></CardHeader>
-        <CardContent>
-          <SynthesisLogTable log={synthLog} />
-        </CardContent>
-      </Card>
+      {/* Card 'Log Iterasi Sintesis' tetap dihapus */}
     </div>
   );
 }
