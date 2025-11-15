@@ -24,8 +24,8 @@ type FMParamsFastAPI = {
   // Anda bisa uncomment sisanya jika API Anda mengembalikannya
   // duration: number;
   // sampling_rate: number;
-  // attack_rate: number;
-  // decay_rate: number;
+  attack_rate: number;
+  decay_rate: number;
   // noise_level: number;
   // add_partials: number;
   // bp_bw: number;
@@ -38,8 +38,8 @@ type FMParamsFrontend = {
   carrierFreq: number;
   modFreq: number;
   modIndex: number;
-  // attack: number;
-  // decay: number;
+  attack: number;
+  decay: number;
   // noiseLevel: number;
   // add_partials: number;
   // bp_bw: number;
@@ -72,8 +72,8 @@ export default function Dashboard() {
     carrierFreq: p.carrier_frequency_fc ?? 0,
     modFreq: p.modulator_frequency_fm ?? 0,
     modIndex: p.modulation_index_I ?? 0,
-    // attack: p.attack_rate ?? 0,
-    // decay: p.decay_rate ?? 0,
+    attack: p.attack_rate ?? 0,
+    decay: p.decay_rate ?? 0,
     // noiseLevel: p.noise_level ?? 0,
     // add_partials: p.add_partials ?? 0,
     // bp_bw: p.bp_bw ?? 0,
@@ -173,6 +173,42 @@ export default function Dashboard() {
       });
     }
   };
+
+  const handleSaveParamsToSTM32 = async () => {
+  if (!paramsAPI) {
+    return toast({
+      title: "Tidak ada parameter FM!",
+      description: "Lakukan Analyze FM terlebih dahulu.",
+      variant: "destructive",
+    });
+  }
+
+  try {
+    toast({ title: "Mengirim ke STM32...", description: "Mohon tunggu." });
+
+    const res = await fetch("/api/save-params", {
+      method: "POST",
+      body: JSON.stringify({ params: paramsAPI }),
+      headers: { "Content-Type": "application/json" },
+    });
+
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error);
+
+    toast({
+      title: "Terkirim ke STM32!",
+      description: "Parameter FM berhasil dikirim melalui MQTT.",
+    });
+
+  } catch (err: any) {
+    toast({
+      title: "Gagal mengirim",
+      description: err.message,
+      variant: "destructive",
+    });
+  }
+};
+
 
   // ---------------------
   // [=] TETAP: Handler untuk hasil rekaman live
@@ -357,27 +393,30 @@ export default function Dashboard() {
         <CardHeader>
           <CardTitle>Kontrol FM (Hasil Analisis)</CardTitle>
         </CardHeader>
+
         <CardContent className="space-y-4">
           {paramsAPI ? (
-            <FmControls
-              params={mapParams(paramsAPI)}
-              setParams={(updated) => {
-                // Logika ini mengizinkan Anda mengubah state 'paramsAPI'
-                // meskipun tidak ada tombol "Synthesize".
-                // Bermanfaat jika Anda ingin mencatatnya secara manual.
-                if (!paramsAPI) return;
-                setParamsAPI({
-                  ...paramsAPI,
-                  carrier_frequency_fc:
-                    updated.carrierFreq ?? paramsAPI.carrier_frequency_fc,
-                  modulator_frequency_fm:
-                    updated.modFreq ?? paramsAPI.modulator_frequency_fm,
-                  modulation_index_I:
-                    updated.modIndex ?? paramsAPI.modulation_index_I,
-                  // ... (tambahkan parameter lain jika Anda mengaktifkannya)
-                });
-              }}
-            />
+            <div className="space-y-4">
+              <FmControls
+                params={mapParams(paramsAPI)}
+                setParams={(updated) => {
+                  if (!paramsAPI) return;
+                  setParamsAPI({
+                    ...paramsAPI,
+                    carrier_frequency_fc: updated.carrierFreq ?? paramsAPI.carrier_frequency_fc,
+                    modulator_frequency_fm: updated.modFreq ?? paramsAPI.modulator_frequency_fm,
+                    modulation_index_I: updated.modIndex ?? paramsAPI.modulation_index_I,
+                  });
+                }}
+              />
+              <Button
+                variant="default"
+                onClick={handleSaveParamsToSTM32}
+                className="w-full"
+              >
+                Save Parameter to STM32 (MQTT)
+              </Button>
+            </div>
           ) : (
             <p className="text-sm text-gray-500 italic">
               Belum ada parameter. Klik Analyze FM pada file referensi.
@@ -385,6 +424,7 @@ export default function Dashboard() {
           )}
         </CardContent>
       </Card>
+
 
       {/* Card 'Log Iterasi Sintesis' tetap dihapus */}
     </div>
