@@ -8,7 +8,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 // --- PENGATURAN PEREKAMAN OTOMATIS (Sama) ---
 const RECORDING_THRESHOLD = 30; // (0-127)
-const SILENCE_DURATION_MS = 500; // 1.5 detik
+const SILENCE_DURATION_MS = 1500; // 1.5 detik
 
 // --- PENGATURAN WAV ENCODER ---
 const BUFFER_SIZE = 4096; // Ukuran buffer untuk ScriptProcessorNode
