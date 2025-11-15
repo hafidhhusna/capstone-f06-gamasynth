@@ -8,8 +8,8 @@ interface FMParamsFrontend {
   carrierFreq?: number;
   modFreq?: number;
   modIndex?: number;
-  attack?: number;
-  decay?: number;
+  // attack?: number;
+  // decay?: number;
   // noiseLevel?: number;
   // add_partials?: number;
   // bp_bw?: number;
@@ -80,8 +80,8 @@ export default function FmControls({ params, setParams }: Props) {
       {control("Carrier Frequency", "carrierFreq", 0, 5000, 10, 220)}
       {control("Modulator Frequency", "modFreq", 0, 5000, 10, 440)}
       {control("Modulation Index", "modIndex", 0, 1000, 0.1, 2)}
-      {control("Attack", "attack", 0, 10000, 0.01, 0.1)}
-      {control("Decay", "decay", 0, 10000, 0.01, 0.5)}
+      {/* {control("Attack", "attack", 0, 10000, 0.01, 0.1)}
+      {control("Decay", "decay", 0, 10000, 0.01, 0.5)} */}
       {/* {control("Noise Level", "noiseLevel", 0, 20, 0.1, 10)}
       {control("Additional Partials", "add_partials", 0, 20, 1, 5)}
       {control("Bandpass Bandwidth", "bp_bw", 0.1, 100, 0.1, 1)}
