@@ -11,6 +11,8 @@ import WaveformViewer from "@/components/WaveFormViewer";
 import FmControls from "@/components/FmControls";
 // [=] TETAP: Komponen perekam live
 import AudioRecorder from "@/components/AudioRecorder";
+import SynthesisLogTable from "@/components/SynthesisLogTable";
+import { SynthesisLogEntry } from "@/components/SynthesisLogTable";
 
 // ---------------------
 // Type Definitions
@@ -24,8 +26,8 @@ type FMParamsFastAPI = {
   // Anda bisa uncomment sisanya jika API Anda mengembalikannya
   // duration: number;
   // sampling_rate: number;
-  attack_rate: number;
-  decay_rate: number;
+  // attack_rate: number;
+  // decay_rate: number;
   // noise_level: number;
   // add_partials: number;
   // bp_bw: number;
@@ -38,8 +40,8 @@ type FMParamsFrontend = {
   carrierFreq: number;
   modFreq: number;
   modIndex: number;
-  attack: number;
-  decay: number;
+  // attack: number;
+  // decay: number;
   // noiseLevel: number;
   // add_partials: number;
   // bp_bw: number;
@@ -66,14 +68,15 @@ export default function Dashboard() {
   const [gmmResult, setGmmResult] = useState<any | null>(null);
   const [gmmModelName, setGmmModelName] = useState<string>("");
   const [evaluating, setEvaluating] = useState(false);
+  const [synthLog, setSynthLog] = useState<SynthesisLogEntry[]>([]);
 
   // [+] DIKEMBALIKAN: Helper untuk map 'paramsAPI' ke 'FmControls'
   const mapParams = (p: FMParamsFastAPI): FMParamsFrontend => ({
     carrierFreq: p.carrier_frequency_fc ?? 0,
     modFreq: p.modulator_frequency_fm ?? 0,
     modIndex: p.modulation_index_I ?? 0,
-    attack: p.attack_rate ?? 0,
-    decay: p.decay_rate ?? 0,
+    // attack: p.attack_rate ?? 0,
+    // decay: p.decay_rate ?? 0,
     // noiseLevel: p.noise_level ?? 0,
     // add_partials: p.add_partials ?? 0,
     // bp_bw: p.bp_bw ?? 0,
@@ -131,6 +134,16 @@ export default function Dashboard() {
         throw new Error(result.error || "Gagal analisis");
 
       setParamsAPI(result.params);
+      setSynthLog((prev) => [
+      ...prev,
+      {
+      id: prev.length + 1,
+      fileName: inputFile.name,
+      fc: result.params.carrier_frequency_fc,
+      fm: result.params.modulator_frequency_fm,
+      index: result.params.modulation_index_I,
+      },
+      ]);
       toast({ title: "Parameter diterima!", description: "Siap ditampilkan." });
     } catch (err: any) {
       toast({
@@ -194,6 +207,22 @@ export default function Dashboard() {
 
     const result = await res.json();
     if (!res.ok) throw new Error(result.error);
+
+          setSynthLog((prev) => [
+        ...prev,
+        {
+          id: prev.length + 1,
+          // source: "Python",
+          // audioUrl: url,
+          fileName: inputFile?.name ?? "unknown.wav",
+          fc: paramsAPI.carrier_frequency_fc ?? 0,
+          fm: paramsAPI.modulator_frequency_fm ?? 0,
+          index: paramsAPI.modulation_index_I ?? 0,
+          // attack: paramsAPI.attack_rate ?? 0,
+          // decay: paramsAPI.decay_rate ?? 0,
+          // noise: paramsAPI.noise_level ?? 0,
+        },
+      ]);
 
     toast({
       title: "Terkirim ke STM32!",
@@ -425,6 +454,14 @@ export default function Dashboard() {
         </CardContent>
       </Card>
 
+      <Card className="bg-white border border-gray-200 shadow-md rounded-2xl hover:shadow-lg transition-all duration-300">
+        <CardHeader>
+          <CardTitle>Log Parameter Sintesis</CardTitle>
+          <CardContent>
+            <SynthesisLogTable log={synthLog}></SynthesisLogTable>
+          </CardContent>
+        </CardHeader>
+      </Card>
 
       {/* Card 'Log Iterasi Sintesis' tetap dihapus */}
     </div>
