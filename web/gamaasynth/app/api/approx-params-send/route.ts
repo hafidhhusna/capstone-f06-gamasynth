@@ -3,8 +3,6 @@ import FormData from "form-data";
 import fetch from "node-fetch";
 import mqtt from "mqtt";
 
-// export const config = { api: { bodyParser: false } };
-
 export async function POST(req: NextRequest) {
   try {
     const formDataReq = await req.formData();
