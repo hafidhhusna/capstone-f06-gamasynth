@@ -7,9 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 
 import AudioUploader from "@/components/AudioUploader";
 import WaveformViewer from "@/components/WaveFormViewer";
-// [+] DIKEMBALIKAN: Komponen untuk menampilkan parameter
 import FmControls from "@/components/FmControls";
-// [=] TETAP: Komponen perekam live
 import AudioRecorder from "@/components/AudioRecorder";
 import SynthesisLogTable from "@/components/SynthesisLogTable";
 import { SynthesisLogEntry } from "@/components/SynthesisLogTable";
@@ -18,21 +16,11 @@ import { SynthesisLogEntry } from "@/components/SynthesisLogTable";
 // Type Definitions
 // ---------------------
 
-// [+] DIKEMBALIKAN: Tipe untuk handleAnalyze
+// Tipe untuk handleAnalyze
 type FMParamsFastAPI = {
   carrier_frequency_fc: number;
   modulator_frequency_fm: number;
   modulation_index_I: number;
-  // Anda bisa uncomment sisanya jika API Anda mengembalikannya
-  // duration: number;
-  // sampling_rate: number;
-  // attack_rate: number;
-  // decay_rate: number;
-  // noise_level: number;
-  // add_partials: number;
-  // bp_bw: number;
-  // secondary_mod_ratio: number;
-  // detune_step: number;
 };
 
 // [+] DIKEMBALIKAN: Tipe untuk FmControls
@@ -40,13 +28,6 @@ type FMParamsFrontend = {
   carrierFreq: number;
   modFreq: number;
   modIndex: number;
-  // attack: number;
-  // decay: number;
-  // noiseLevel: number;
-  // add_partials: number;
-  // bp_bw: number;
-  // secondary_mod_ratio: number;
-  // detune_step: number;
 };
 
 export default function Dashboard() {
@@ -70,18 +51,11 @@ export default function Dashboard() {
   const [evaluating, setEvaluating] = useState(false);
   const [synthLog, setSynthLog] = useState<SynthesisLogEntry[]>([]);
 
-  // [+] DIKEMBALIKAN: Helper untuk map 'paramsAPI' ke 'FmControls'
+  // Helper untuk map 'paramsAPI' ke 'FmControls'
   const mapParams = (p: FMParamsFastAPI): FMParamsFrontend => ({
     carrierFreq: p.carrier_frequency_fc ?? 0,
     modFreq: p.modulator_frequency_fm ?? 0,
     modIndex: p.modulation_index_I ?? 0,
-    // attack: p.attack_rate ?? 0,
-    // decay: p.decay_rate ?? 0,
-    // noiseLevel: p.noise_level ?? 0,
-    // add_partials: p.add_partials ?? 0,
-    // bp_bw: p.bp_bw ?? 0,
-    // secondary_mod_ratio: p.secondary_mod_ratio ?? 0,
-    // detune_step: p.detune_step ?? 0,
   });
 
   // Cleanup URL saat unmount
@@ -107,7 +81,7 @@ export default function Dashboard() {
   };
 
   // ---------------------
-  // [+] DIKEMBALIKAN: Analyze FM Params
+  // Analyze FM Params
   // ---------------------
   const handleAnalyze = async () => {
     if (!inputFile)
@@ -212,15 +186,10 @@ export default function Dashboard() {
         ...prev,
         {
           id: prev.length + 1,
-          // source: "Python",
-          // audioUrl: url,
           fileName: inputFile?.name ?? "unknown.wav",
           fc: paramsAPI.carrier_frequency_fc ?? 0,
           fm: paramsAPI.modulator_frequency_fm ?? 0,
           index: paramsAPI.modulation_index_I ?? 0,
-          // attack: paramsAPI.attack_rate ?? 0,
-          // decay: paramsAPI.decay_rate ?? 0,
-          // noise: paramsAPI.noise_level ?? 0,
         },
       ]);
 
@@ -240,7 +209,7 @@ export default function Dashboard() {
 
 
   // ---------------------
-  // [=] TETAP: Handler untuk hasil rekaman live
+  // Handler untuk hasil rekaman live
   // ---------------------
   const handleRecordingComplete = (audioFile: File) => {
     if (liveRecordingUrl) {
@@ -257,7 +226,7 @@ export default function Dashboard() {
   };
 
   // ---------------------
-  // [=] TETAP: GMM Evaluation (menggunakan audio live)
+  // GMM Evaluation (menggunakan audio live)
   // ---------------------
   const handleEvaluateGMM = async () => {
     if (!liveRecordingFile)
@@ -339,7 +308,6 @@ export default function Dashboard() {
               />
             )}
             <div className="flex gap-2 mt-2">
-              {/* [+] DIKEMBALIKAN: Tombol Analyze FM */}
               <Button
                 variant="outline"
                 onClick={handleAnalyze}
@@ -347,13 +315,6 @@ export default function Dashboard() {
               >
                 Analyze FM
               </Button>
-              {/* <Button
-                variant="outline"
-                onClick={handleMFCC}
-                disabled={!inputFile}
-              >
-                Extract MFCC (Ref)
-              </Button> */}
             </div>
           </CardContent>
         </Card>
@@ -364,10 +325,7 @@ export default function Dashboard() {
             <CardTitle>Live Capture (STM32) & GMM</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {/* [=] TETAP: Komponen Perekam Live */}
             <AudioRecorder onRecordingComplete={handleRecordingComplete} />
-
-            {/* [=] TETAP: Menampilkan hasil rekaman */}
             {liveRecordingUrl && (
               <div className="space-y-2 pt-4 border-t">
                 <h4 className="text-md font-medium">Hasil Rekaman Live:</h4>
@@ -382,19 +340,26 @@ export default function Dashboard() {
                 />
               </div>
             )}
-
-            {/* [=] TETAP: GMM Evaluation */}
             <div className="space-y-2 mt-4 pt-4 border-t">
-              <label className="block text-sm font-medium text-gray-700">
-                Pilih model GMM:
-              </label>
-              <input
-                type="text"
-                className="border rounded p-1 w-full"
-                placeholder="contoh: gamelan_model_01"
-                value={gmmModelName}
-                onChange={(e) => setGmmModelName(e.target.value)}
-              />
+            <label className="block text-sm font-medium text-gray-700">
+              Pilih model GMM:
+            </label>
+
+            <select
+              className="border rounded p-1 w-full"
+              value={gmmModelName}
+              onChange={(e) => setGmmModelName(e.target.value)}
+            >
+              <option value="">-- pilih model --</option>
+              <option value="saron_p1">Saron Pelog 1</option>
+              <option value="saron_p2">Saron Pelog 2</option>
+              <option value="saron_p3">Saron Pelog 3</option>
+              <option value="saron_p4">Saron Pelog 4</option>
+              <option value="saron_p5">Saron Pelog 5</option>
+              <option value="saron_p6">Saron Pelog 6</option>
+              <option value="saron_p7">Saron Pelog 7</option>
+            </select>
+
               <Button
                 variant="outline"
                 onClick={handleEvaluateGMM}
@@ -416,8 +381,6 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       </div>
-
-      {/* [+] DIKEMBALIKAN: Card untuk Kontrol FM (Hasil Analisis) */}
       <Card className="bg-white border border-gray-200 shadow-md rounded-2xl hover:shadow-lg transition-all duration-300">
         <CardHeader>
           <CardTitle>Kontrol FM (Hasil Analisis)</CardTitle>
@@ -462,8 +425,6 @@ export default function Dashboard() {
           </CardContent>
         </CardHeader>
       </Card>
-
-      {/* Card 'Log Iterasi Sintesis' tetap dihapus */}
     </div>
   );
 }

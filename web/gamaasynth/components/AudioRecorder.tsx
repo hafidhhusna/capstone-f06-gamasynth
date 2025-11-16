@@ -6,9 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Mic, StopCircle, AlertTriangle, Radio } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
-// --- PENGATURAN PEREKAMAN OTOMATIS (Sama) ---
+// --- PENGATURAN PEREKAMAN OTOMATIS ---
 const RECORDING_THRESHOLD = 30; // (0-127)
-const SILENCE_DURATION_MS = 500; // 1.5 detik
+const SILENCE_DURATION_MS = 1500; // 1.5 detik
 
 // --- PENGATURAN WAV ENCODER ---
 const BUFFER_SIZE = 4096; // Ukuran buffer untuk ScriptProcessorNode
@@ -55,9 +55,6 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({ onRecordingComplete }) =>
       analyser.fftSize = 2048;
       const source = context.createMediaStreamSource(stream);
 
-      // [PERUBAHAN] Buat ScriptProcessorNode untuk menangkap data mentah
-      // Catatan: Ini deprecated, tapi paling kompatibel dan mudah untuk diimplementasikan
-      // (Alternatif modernnya adalah AudioWorklet)
       const scriptProcessorNode = context.createScriptProcessor(
         BUFFER_SIZE,
         1, // 1 channel input (mono)
@@ -110,7 +107,7 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({ onRecordingComplete }) =>
       silenceTimerRef.current = null;
     }
 
-    // [PERUBAHAN] Putuskan koneksi node perekam
+    // Putuskan koneksi node perekam
     scriptProcessorNodeRef.current?.disconnect();
     mediaStreamSourceRef.current?.disconnect();
     analyserRef.current?.disconnect();
