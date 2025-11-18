@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
     const formDataPython = new FormData();
     formDataPython.append("file", buffer, { filename: file.name, contentType: file.type });
 
-    const fastapiRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/synthesize/analyze`, {
+    const fastapiRes = await fetch(`http://localhost:8080/synthesize/analyze`, {
       method: "POST",
       body: formDataPython as any,
     });

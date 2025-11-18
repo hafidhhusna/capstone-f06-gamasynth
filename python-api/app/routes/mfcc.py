@@ -4,6 +4,7 @@ import uuid
 import os
 import tempfile
 from app.services.mfcc_service import MFCCExtractor
+import librosa
 
 router = APIRouter()
 
@@ -15,7 +16,7 @@ async def extract_mfcc(file: UploadFile = File(...)):
         tmp_path = tmp.name
 
     # Ekstraksi MFCC
-    y, sr = MFCCExtractor(tmp_path, sr=None)  # kalau mau langsung service extract, bisa panggil extract_mfcc_from_file
+    y, sr = librosa.load(tmp_path, sr=None)  # kalau mau langsung service extract, bisa panggil extract_mfcc_from_file
     extractor = MFCCExtractor(sr=sr)
     mfcc_result = extractor.extract(y)
 
