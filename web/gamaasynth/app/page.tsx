@@ -11,6 +11,8 @@ import FmControls from "@/components/FmControls";
 import AudioRecorder from "@/components/AudioRecorder";
 import SynthesisLogTable from "@/components/SynthesisLogTable";
 import { SynthesisLogEntry } from "@/components/SynthesisLogTable";
+import SpectrumPlot from "@/components/SpectrumPlot";
+
 
 // ---------------------
 // Type Definitions
@@ -36,6 +38,7 @@ export default function Dashboard() {
   // --- State untuk Input (File Referensi) ---
   const [inputFile, setInputFile] = useState<File | null>(null);
   const [inputAudioUrl, setInputAudioUrl] = useState<string | null>(null);
+  const [fftReference, setFftReference] = useState<{frequency: number[], magnitude: number[]} | null>(null);
 
   // --- State untuk Hasil Rekaman Live (STM32) ---
   const [liveRecordingFile, setLiveRecordingFile] = useState<File | null>(null);
@@ -108,6 +111,21 @@ export default function Dashboard() {
         throw new Error(result.error || "Gagal analisis");
 
       setParamsAPI(result.params);
+
+      const fftRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/synthesize/FFT`,{
+        method: "POST",
+        body: formData,
+      });
+
+      const fftJson = await fftRes.json();
+      if(!fftRes.ok)
+        throw new Error("FFT Gagal!");
+
+      setFftReference({
+        frequency: fftJson.frequency,
+        magnitude: fftJson.magnitude,
+      })
+
       setSynthLog((prev) => [
       ...prev,
       {
@@ -118,7 +136,7 @@ export default function Dashboard() {
       index: result.params.modulation_index_I,
       },
       ]);
-      toast({ title: "Parameter diterima!", description: "Siap ditampilkan." });
+      toast({ title: "Analisis Berhasil!", description: "Parameter FM dan FFT berhasil diambil." });
     } catch (err: any) {
       toast({
         title: "Gagal analisis",
@@ -142,7 +160,7 @@ export default function Dashboard() {
       formData.append("file", inputFile);
 
       const res = await fetch(
-        "https://gamasynth-api-production.up.railway.app/mfcc/extract_mfcc/",
+        `${process.env.NEXT_PUBLIC_API_URL!}/mfcc/extract_mfcc/`,
         {
           method: "POST",
           body: formData,
@@ -249,7 +267,7 @@ export default function Dashboard() {
       formData.append("reference_model", gmmModelName);
 
       const res = await fetch(
-        "https://gamasynth-api-production.up.railway.app/gmm/compare/",
+        `${process.env.NEXT_PUBLIC_API_URL!}/gmm/compare/`,
         {
           method: "POST",
           body: formData,
@@ -380,6 +398,18 @@ export default function Dashboard() {
             </div>
           </CardContent>
         </Card>
+      </div>
+      <div>
+            {fftReference && (
+              <Card className="mt-4 p-4 border shadow-sm rounded-xl">
+                <h3 className="text-lg font-semibold mb-2">FFT Referensi</h3>
+                <SpectrumPlot
+                  frequency={fftReference.frequency}
+                  magnitude={fftReference.magnitude}
+                  title="FFT Audio Referensi"
+                />
+              </Card>
+            )}
       </div>
       <Card className="bg-white border border-gray-200 shadow-md rounded-2xl hover:shadow-lg transition-all duration-300">
         <CardHeader>
