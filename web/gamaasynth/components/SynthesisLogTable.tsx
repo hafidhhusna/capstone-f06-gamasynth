@@ -8,6 +8,8 @@ export interface SynthesisLogEntry {
   fc: number;
   fm: number;
   index: number;
+  source: "Python" | "STM32";
+  audioUrl: string;
 }
 
 interface Props {
