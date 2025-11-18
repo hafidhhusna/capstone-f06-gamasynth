@@ -1,33 +1,34 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, UploadFile, File
 import numpy as np
 import scipy.io.wavfile as wav
+import tempfile
 
 app = FastAPI()
 
-@app.get("/FFT")
-def compute_fft():
-    # --- 1. Ambil file audio ---
-    file_path = 'sintesis_saron_p1.wav'
-    sr, audio = wav.read(file_path)
+@app.post("/FFT")
+async def compute_fft(file: UploadFile = File(...)):
+    # --- 1. Simpan file sementara ---
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+        tmp.write(await file.read())
+        temp_path = tmp.name
+
+    # --- 2. Baca file audio ---
+    sr, audio = wav.read(temp_path)
 
     # Jika stereo → ubah ke mono
     if len(audio.shape) == 2:
         audio = np.mean(audio, axis=1)
 
-    # --- 2. FFT ---
+    # --- 3. FFT ---
     N = len(audio)
     fft_vals = np.fft.fft(audio)
-    fft_magnitude = np.abs(fft_vals)[:N//2]
-    freqs = np.fft.fftfreq(N, 1/sr)[:N//2]
+    fft_magnitude = np.abs(fft_vals)[:N // 2]
+    freqs = np.fft.fftfreq(N, 1/sr)[:N // 2]
 
-    # Convert ke Python native list agar bisa jadi JSON
-    freqs_list = freqs.tolist()
-    magnitude_list = fft_magnitude.tolist()
-
-    # --- 3. Return data JSON ---
+    # Convert ke list agar bisa di-JSON-kan
     return {
         "sample_rate": int(sr),
         "samples": int(N),
-        "frequency": freqs_list,
-        "magnitude": magnitude_list
+        "frequency": freqs.tolist(),
+        "magnitude": fft_magnitude.tolist()
     }
