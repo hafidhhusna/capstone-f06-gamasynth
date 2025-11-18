@@ -470,7 +470,7 @@ export default function Dashboard() {
                     <div className="h-40 flex flex-col items-center justify-center border-2 border-dashed rounded-lg bg-gray-50 text-gray-400 text-sm gap-2">
                       <p>Belum ada hasil sintesis.</p>
                       <Button variant="outline" size="sm" onClick={handleAnalyze} disabled={!inputFile}>
-                        Jalankan "Analyze FM" Dulu
+                        Jalankan Analyze FM Dulu
                       </Button>
                     </div>
                   )}
