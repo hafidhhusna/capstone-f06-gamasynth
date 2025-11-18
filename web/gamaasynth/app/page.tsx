@@ -41,7 +41,6 @@ export default function Dashboard() {
   const [inputFile, setInputFile] = useState<File | null>(null);
   const [inputAudioUrl, setInputAudioUrl] = useState<string | null>(null);
   const [fftReference, setFftReference] = useState<{ frequency: number[]; magnitude: number[] } | null>(null);
-  const [mfccDataRef, setMfccDataRef] = useState<number[][] | null>(null); // [BARU] Data MFCC Referensi
 
   // --- STATE: EVALUASI & KOMPARASI (TAB SYSTEM) ---
   const [activeEvalTab, setActiveEvalTab] = useState<"STM32" | "Python">("STM32");
@@ -99,7 +98,6 @@ export default function Dashboard() {
     const url = URL.createObjectURL(file);
     setInputAudioUrl(url);
     setInputFile(file);
-    setMfccDataRef(null); // Reset MFCC Ref saat upload baru
     toast({ title: "File diunggah", description: `${file.name} siap.` });
   };
 
@@ -137,6 +135,7 @@ export default function Dashboard() {
       formDataSynth.append("bp_bw", "0.25");
       formDataSynth.append("secondary_mod_ratio", "0.25");
       formDataSynth.append("detune_step", "0.0015");
+
       const resSynth = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/synthesize/synthesize`, {
         method: "POST",
         body: formDataSynth, 
@@ -223,9 +222,6 @@ export default function Dashboard() {
     toast({ title: "Rekaman Selesai", description: "Siap dievaluasi." });
   };
 
-  // ---------------------
-  // FEATURE: EXTRACT MFCC (EVALUATION TABS)
-  // ---------------------
   const handleExtractMFCC = async () => {
     const targetFile = activeEvalTab === "STM32" ? liveRecordingFile : pythonSynthFile;
     
@@ -258,42 +254,6 @@ export default function Dashboard() {
       }
       
       toast({ title: "Sukses", description: `MFCC ${activeEvalTab} berhasil diekstrak.` });
-
-    } catch (err: any) {
-      toast({ title: "Gagal Ekstraksi", description: err.message, variant: "destructive" });
-    } finally {
-      setExtractingMfcc(false);
-    }
-  };
-
-  // ---------------------
-  // [BARU] FEATURE: EXTRACT MFCC (AUDIO ASLI)
-  // ---------------------
-  const handleExtractMFCCRef = async () => {
-    if (!inputFile) {
-      return toast({ 
-        title: "Tidak ada file input", 
-        description: "Silakan upload file audio referensi dulu.", 
-        variant: "destructive" 
-      });
-    }
-
-    setExtractingMfcc(true);
-    try {
-      const formData = new FormData();
-      formData.append("file", inputFile);
-
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/mfcc/extract_mfcc/`, {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!res.ok) throw new Error(await res.text());
-      
-      const result = await res.json();
-      setMfccDataRef(result.mfcc); // Simpan ke state MFCC Ref
-      
-      toast({ title: "Sukses", description: "MFCC Audio Asli berhasil diekstrak." });
 
     } catch (err: any) {
       toast({ title: "Gagal Ekstraksi", description: err.message, variant: "destructive" });
@@ -348,30 +308,9 @@ export default function Dashboard() {
               <AudioUploader onUpload={handleUpload} />
               <WaveformViewer file={inputFile} label="Input Asli" />
               {inputAudioUrl && <audio controls src={inputAudioUrl} className="w-full mt-2" />}
-              
-              <div className="space-y-2">
-                <Button onClick={handleAnalyze} disabled={!inputFile} className="w-full bg-blue-600 hover:bg-blue-700 text-white">
-                  Analyze & Synthesize (Python)
-                </Button>
-
-                {/* [BARU] Tombol MFCC Audio Asli */}
-                <Button 
-                  variant="outline" 
-                  onClick={handleExtractMFCCRef} 
-                  disabled={!inputFile || extractingMfcc} 
-                  className="w-full"
-                >
-                  {extractingMfcc ? "Mengekstrak..." : "Tampilkan Spektrum MFCC (Asli)"}
-                </Button>
-              </div>
-              
-              {/* [BARU] Heatmap MFCC Audio Asli */}
-              {mfccDataRef && (
-                <div className="mt-4 animate-in fade-in">
-                  <MFCCHeatmap data={mfccDataRef} title="MFCC Spectrum: Audio Asli" />
-                </div>
-              )}
-
+              <Button onClick={handleAnalyze} disabled={!inputFile} className="w-full bg-blue-600 hover:bg-blue-700 text-white">
+                Analyze & Synthesize (Python)
+              </Button>
             </CardContent>
           </Card>
 
