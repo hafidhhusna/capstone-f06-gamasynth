@@ -153,7 +153,7 @@ export default function Dashboard() {
         formDataSynth.append("detune_step", "0.0015");
 
       // Panggil Endpoint Python
-      const resSynth = await fetch(`http://localhost:8080/synthesize/synthesize`, {
+      const resSynth = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/synthesize/synthesize`, {
         method: "POST",
         body: formDataSynth, 
       });
@@ -173,7 +173,7 @@ export default function Dashboard() {
       setPythonSynthUrl(pyUrl);
 
       // --- STEP C: GET FFT (OPTIONAL) ---
-      const fftRes = await fetch(`http://localhost:8080/synthesize/FFT`, { method: "POST", body: formDataBasic });
+      const fftRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/synthesize/FFT`, { method: "POST", body: formDataBasic });
       const fftJson = await fftRes.json();
       if (fftRes.ok) setFftReference({ frequency: fftJson.frequency, magnitude: fftJson.magnitude });
 
@@ -294,7 +294,7 @@ export default function Dashboard() {
       formData.append("test_file", targetFile); 
       formData.append("reference_model", gmmModelName);
 
-      const res = await fetch(`http://localhost:8080/gmm/compare/`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/gmm/compare/`, {
         method: "POST",
         body: formData,
       });
