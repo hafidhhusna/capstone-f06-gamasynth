@@ -181,10 +181,21 @@ export default function Dashboard() {
   };
 
   const handleSaveParamsToSTM32 = async () => {
-    if (!paramsAPI) return toast({ title: "Error", description: "Belum ada parameter!", variant: "destructive" });
+    if (!paramsAPI) {
+      return toast({
+        title: "Error",
+        description: "Belum ada parameter!",
+        variant: "destructive",
+      });
+    }
 
     try {
-      toast({ title: "Mengirim...", description: "Kirim parameter ke STM32 via MQTT." });
+      toast({
+        title: "Mengirim...",
+        description: "Kirim parameter ke STM32 via MQTT.",
+      });
+
+      // 1. --- KIRIM PARAMETER KE STM32 ---
       const res = await fetch("/api/save-params", {
         method: "POST",
         body: JSON.stringify({ params: paramsAPI }),
@@ -194,24 +205,86 @@ export default function Dashboard() {
       const result = await res.json();
       if (!res.ok) throw new Error(result.error);
 
+      // =========================================================
+      // 2. --- LAKUKAN SINTESIS PYTHON MENGGUNAKAN PARAMETER YANG SAMA ---
+      // =========================================================
+
+      toast({
+        title: "Sintesis Python...",
+        description: "Generator sedang memproses audio berdasarkan parameter yang dikirim.",
+      });
+
+      const formDataSynth = new FormData();
+
+      // Tidak perlu mengirim file referensi --> synthesizer pakai parameter
+      formDataSynth.append("file", inputFile as File);
+      formDataSynth.append("carrier_frequency_fc", paramsAPI.carrier_frequency_fc.toString());
+      formDataSynth.append("modulator_frequency_fm", paramsAPI.modulator_frequency_fm.toString());
+      formDataSynth.append("modulation_index_I", paramsAPI.modulation_index_I.toString());
+
+      // Parameter lain bisa kamu sesuaikan atau biarkan default
+      formDataSynth.append("attack_rate", "150.0");
+      formDataSynth.append("decay_rate", "2.5");
+      formDataSynth.append("noise_level", "10");
+      formDataSynth.append("duration", "7.0");
+      formDataSynth.append("sampling_rate", "44100");
+      formDataSynth.append("add_partials", "10");
+      formDataSynth.append("bp_bw", "0.25");
+      formDataSynth.append("secondary_mod_ratio", "0.25");
+      formDataSynth.append("detune_step", "0.0015");
+
+      const resSynth = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL!}/synthesize/synthesize`,
+        {
+          method: "POST",
+          body: formDataSynth,
+        }
+      );
+
+      if (!resSynth.ok) throw new Error("Gagal sintesis Python (STM32 mode)");
+
+      const audioBlob = await resSynth.blob();
+      const pyFile = new File([audioBlob], "stm32_matched_synth.wav", {
+        type: "audio/wav",
+      });
+      const pyUrl = URL.createObjectURL(audioBlob);
+      generatedUrls.current.push(pyUrl);
+
+      setPythonSynthFile(pyFile);
+      setPythonSynthUrl(pyUrl);
+      setMfccDataPython(null);
+
+      // Tambah log
       setSynthLog((prev) => [
         ...prev,
         {
           id: prev.length + 1,
-          fileName: inputFile?.name ?? "unknown.wav",
+          fileName: "STM32_synth_python.wav",
           fc: paramsAPI.carrier_frequency_fc,
           fm: paramsAPI.modulator_frequency_fm,
           index: paramsAPI.modulation_index_I,
-          source: "STM32",
-          audioUrl: "", 
+          source: "Python",
+          audioUrl: pyUrl,
         },
       ]);
-      setActiveEvalTab("STM32");
-      toast({ title: "Terkirim!", description: "Silakan rekam output STM32." });
+
+      // Beralih langsung ke tab Python supaya user bisa dengarkan hasilnya
+      setActiveEvalTab("Python");
+
+      toast({
+        title: "Sukses!",
+        description: "Parameter terkirim ke STM32 & Sintesis Python selesai.",
+      });
+
     } catch (err: any) {
-      toast({ title: "Gagal kirim", description: err.message, variant: "destructive" });
+      toast({
+        title: "Gagal",
+        description: err.message,
+        variant: "destructive",
+      });
     }
   };
+
 
   const handleRecordingComplete = (audioFile: File) => {
     if (liveRecordingUrl) URL.revokeObjectURL(liveRecordingUrl);
@@ -326,7 +399,7 @@ export default function Dashboard() {
               {paramsAPI ? (
                 <>
                   <FmControls params={mapParams(paramsAPI)} setParams={(u) => setParamsAPI({ ...paramsAPI, carrier_frequency_fc: u.carrierFreq ?? paramsAPI.carrier_frequency_fc, modulator_frequency_fm: u.modFreq ?? paramsAPI.modulator_frequency_fm, modulation_index_I: u.modIndex ?? paramsAPI.modulation_index_I })} />
-                  <Button onClick={handleSaveParamsToSTM32} variant="secondary" className="w-full border">Kirim ke STM32</Button>
+                  <Button onClick={handleSaveParamsToSTM32} variant="secondary" className="w-full border">Mulai Sintesis</Button>
                 </>
               ) : <p className="text-sm text-gray-500 text-center italic">Belum ada parameter.</p>}
             </CardContent>
